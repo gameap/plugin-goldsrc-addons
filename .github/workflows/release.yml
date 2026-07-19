@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  # Ref of gameap/gameap providing web/plugin-sdk; pin to a SHA if the SDK drifts
+  # from frontend/package-lock.json
+  GAMEAP_REF: main
+  # Ref of gameap/gameap-proto providing rust/gameap-plugin-sdk; pin to a SHA if
+  # the SDK drifts from Cargo.lock
+  GAMEAP_PROTO_REF: main
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: plugin-goldsrc-addons
+
+      # The frontend depends on file:../../gameap-api/web/plugin-sdk, so the
+      # gameap repo must be checked out as a sibling directory named gameap-api
+      - uses: actions/checkout@v4
+        with:
+          repository: gameap/gameap
+          ref: ${{ env.GAMEAP_REF }}
+          path: gameap-api
+
+      # Cargo.toml depends on path = "../gameap-proto/rust/gameap-plugin-sdk"
+      - uses: actions/checkout@v4
+        with:
+          repository: gameap/gameap-proto
+          ref: ${{ env.GAMEAP_PROTO_REF }}
+          path: gameap-proto
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            gameap-api/web/plugin-sdk/package-lock.json
+            plugin-goldsrc-addons/frontend/package-lock.json
+
+      # Bakes the release tag into PluginInfo.version (Cargo.toml) and the
+      # frontend PluginDefinition before anything is built.
+      - name: Set version from tag
+        working-directory: plugin-goldsrc-addons
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${TAG#v}"
+          sed -i "s/^version = \".*\"$/version = \"${VERSION}\"/" Cargo.toml
+          sed -i "s/^    version: '.*',$/    version: '${VERSION}',/" frontend/src/index.ts
+          grep -q "^version = \"${VERSION}\"$" Cargo.toml
+          grep -q "version: '${VERSION}'," frontend/src/index.ts
+
+      # The @gameap/ui tarball on npm is missing its icons/ directory, so the
+      # package from the gameap checkout is installed over it. SDK is built with
+      # vite only ("npm run build" also runs tsc, which fails on @gameap/ui's
+      # missing type declarations); the frontend build only needs dist/index.js.
+      - name: Build plugin SDK
+        working-directory: gameap-api/web/plugin-sdk
+        run: |
+          npm ci
+          npm install --no-save ../frontend/packages/gameap-ui
+          npx vite build
+
+      - name: Build frontend
+        working-directory: plugin-goldsrc-addons/frontend
+        run: |
+          npm ci
+          npm run build
+
+      # Installs the toolchain and targets pinned in rust-toolchain.toml
+      - name: Set up Rust
+        working-directory: plugin-goldsrc-addons
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: plugin-goldsrc-addons
+
+      - name: Build wasm
+        working-directory: plugin-goldsrc-addons
+        run: make wasm
+
+      - name: Sign wasm
+        working-directory: plugin-goldsrc-addons
+        env:
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+        run: |
+          if [ -z "$GPG_SIGNING_KEY" ]; then
+            echo "::error::GPG_SIGNING_KEY secret is not set"
+            exit 1
+          fi
+          printf '%s' "$GPG_SIGNING_KEY" | gpg --batch --import
+          gpg --batch --yes --detach-sign --armor -o goldsrc-addons.wasm.asc goldsrc-addons.wasm
+
+      - name: Publish to plugins.gameap.dev
+        working-directory: plugin-goldsrc-addons
+        env:
+          GAMEAP_DEPLOY_TOKEN: ${{ secrets.GAMEAP_DEPLOY_TOKEN }}
+          GAMEAP_PLUGIN_ID: ${{ vars.GAMEAP_PLUGIN_ID }}
+          TAG: ${{ github.event.release.tag_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          if [ -z "$GAMEAP_PLUGIN_ID" ]; then
+            echo "::error::GAMEAP_PLUGIN_ID repository variable is not set"
+            exit 1
+          fi
+          if [ -z "$GAMEAP_DEPLOY_TOKEN" ]; then
+            echo "::error::GAMEAP_DEPLOY_TOKEN secret is not set"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          printf '%s' "$RELEASE_BODY" > "$RUNNER_TEMP/changelog.md"
+          ARGS=(-sS
+            -o "$RUNNER_TEMP/response.json"
+            -w "%{http_code}"
+            -H "Authorization: Bearer ${GAMEAP_DEPLOY_TOKEN}"
+            -F "version=${VERSION}"
+            -F "file=@goldsrc-addons.wasm"
+            -F "signature=@goldsrc-addons.wasm.asc"
+            -F "changelog=<${RUNNER_TEMP}/changelog.md")
+          if [ "$PRERELEASE" != "true" ]; then
+            ARGS+=(-F "is_stable=true")
+          fi
+          STATUS=$(curl "${ARGS[@]}" \
+            "https://plugins.gameap.dev/api/ci/plugins/${GAMEAP_PLUGIN_ID}/versions")
+          cat "$RUNNER_TEMP/response.json"
+          echo
+          if [ "$STATUS" != "201" ]; then
+            echo "::error::Publish failed with HTTP $STATUS"
+            exit 1
+          fi
+
+      - name: Attach artifacts to GitHub release
+        working-directory: plugin-goldsrc-addons
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" goldsrc-addons.wasm goldsrc-addons.wasm.asc --clobber

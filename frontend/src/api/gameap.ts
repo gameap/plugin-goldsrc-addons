@@ -1,0 +1,92 @@
+// Existing GameAP panel endpoints the plugin frontend uses directly:
+// RCON for versions/runtime status, file-manager for uploads and configs,
+// server restart.
+
+import axios from 'axios';
+
+export type RconFailure = 'offline' | 'no-rcon' | 'error';
+
+export class RconError extends Error {
+    reason: RconFailure;
+
+    constructor(reason: RconFailure, message: string) {
+        super(message);
+        this.reason = reason;
+    }
+}
+
+/** POST /api/servers/{id}/rcon — synchronous command output. */
+export async function rcon(serverId: number, command: string): Promise<string> {
+    try {
+        const response = await axios.post(`/api/servers/${serverId}/rcon`, { command });
+        return String(response.data?.output ?? '');
+    } catch (error) {
+        throw toRconError(error);
+    }
+}
+
+function toRconError(error: unknown): RconError {
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+    if (status === 503) {
+        return new RconError('offline', 'server is offline');
+    }
+    if (status === 412) {
+        return new RconError('no-rcon', 'rcon password is not configured');
+    }
+    return new RconError('error', axios.isAxiosError(error) ? error.message : String(error));
+}
+
+/** POST /api/file-manager/{id}/update-file — multipart write into a directory. */
+export async function fmUploadFile(
+    serverId: number,
+    directory: string,
+    file: File,
+    onProgress?: (percent: number) => void,
+): Promise<void> {
+    const form = new FormData();
+    form.append('disk', 'server');
+    form.append('path', directory);
+    form.append('file', file);
+    await axios.post(`/api/file-manager/${serverId}/update-file`, form, {
+        onUploadProgress: (event) => {
+            if (onProgress && event.total) {
+                onProgress(Math.round((event.loaded / event.total) * 100));
+            }
+        },
+    });
+}
+
+/** GET /api/file-manager/{id}/download — raw file content as text. */
+export async function fmDownloadText(serverId: number, path: string): Promise<string> {
+    const response = await axios.get(`/api/file-manager/${serverId}/download`, {
+        params: { disk: 'server', path },
+        responseType: 'text',
+        transformResponse: [(data: unknown) => data],
+    });
+    return String(response.data ?? '');
+}
+
+/** POST /api/file-manager/{id}/create-directory — ignores "already exists". */
+export async function fmEnsureDirectory(
+    serverId: number,
+    parent: string,
+    name: string,
+): Promise<void> {
+    try {
+        await axios.post(`/api/file-manager/${serverId}/create-directory`, {
+            disk: 'server',
+            path: parent,
+            name,
+        });
+    } catch (error) {
+        if (axios.isAxiosError(error) && error.response && error.response.status < 500) {
+            return; // directory already exists
+        }
+        throw error;
+    }
+}
+
+/** POST /api/servers/{id}/restart */
+export async function restartServer(serverId: number): Promise<void> {
+    await axios.post(`/api/servers/${serverId}/restart`);
+}
