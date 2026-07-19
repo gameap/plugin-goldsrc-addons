@@ -142,7 +142,6 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { NAlert, NCard, NEmpty, NTabPane, NTabs } from 'naive-ui';
 import { providePluginTrans } from '@gameap/plugin-sdk';
-import type { ServerTabProps } from '@gameap/plugin-sdk';
 
 import ConfigModal from './ConfigModal.vue';
 import InstallModal from './InstallModal.vue';
@@ -164,6 +163,7 @@ import type {
     PluginRow,
     RowStatus,
     RuntimePluginInfo,
+    ServerTabProps,
     StateResponse,
 } from '../types';
 

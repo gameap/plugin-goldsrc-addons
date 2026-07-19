@@ -112,3 +112,37 @@ export type RowStatus =
     | 'pending'
     | 'error'
     | 'missing';
+
+// Local mirror of the SDK's ServerData / ServerTabProps contract.
+//
+// Declared here rather than imported from @gameap/plugin-sdk so that
+// `defineProps<ServerTabProps>()` compiles against the shipped plugin build: the
+// Vue SFC compiler statically resolves the props type at build time, and the CI
+// SDK build runs vite only (its `tsc --emitDeclarationOnly` step fails on
+// @gameap/ui and emits no declarations), so the SDK's types are not on disk to
+// resolve against.
+
+export interface ServerData {
+    id: number;
+    uuid: string;
+    name: string;
+    game_id: string;
+    game_mod_id: number;
+    ip: string;
+    port: number;
+    query_port: number;
+    rcon_port: number;
+    enabled: boolean;
+    installed: boolean;
+    blocked: boolean;
+    start_command: string;
+    dir: string;
+    process_active: boolean;
+    last_process_check: string;
+}
+
+export interface ServerTabProps {
+    serverId: number;
+    server: ServerData;
+    pluginId: string;
+}
