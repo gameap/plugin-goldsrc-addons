@@ -47,6 +47,13 @@ pub struct FileStat {
     pub size: u64,
 }
 
+/// Result of a command executed on a node (nodecmd).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandOutput {
+    pub output: String,
+    pub exit_code: i32,
+}
+
 pub trait HostApi {
     fn get_server(&mut self, id: u64) -> HostResult<Option<ServerInfo>>;
     fn get_game(&mut self, code: &str) -> HostResult<Option<GameInfo>>;
@@ -59,6 +66,12 @@ pub trait HostApi {
     fn upload(&mut self, node_id: u64, path: &str, content: &[u8], permissions: u32)
     -> HostResult<()>;
     fn remove(&mut self, node_id: u64, path: &str, recursive: bool) -> HostResult<()>;
+    fn execute_command(
+        &mut self,
+        node_id: u64,
+        command: &str,
+        work_dir: Option<&str>,
+    ) -> HostResult<CommandOutput>;
     fn log_info(&mut self, message: &str);
     fn log_error(&mut self, message: &str);
 }
@@ -68,7 +81,7 @@ pub struct WasmHost;
 /// HashMap-backed fake node used by native handler tests.
 #[cfg(test)]
 pub mod mock {
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
     use super::*;
 
@@ -81,6 +94,10 @@ pub mod mock {
         pub files: BTreeMap<String, Vec<u8>>,
         /// Absolute paths of directories.
         pub dirs: BTreeSet<String>,
+        /// Commands passed to execute_command, in call order.
+        pub commands: Vec<(String, Option<String>)>,
+        /// Canned execute_command results, popped one per call.
+        pub command_results: VecDeque<CommandOutput>,
         pub logs: Vec<String>,
     }
 
@@ -227,6 +244,20 @@ pub mod mock {
             Ok(())
         }
 
+        fn execute_command(
+            &mut self,
+            _node_id: u64,
+            command: &str,
+            work_dir: Option<&str>,
+        ) -> HostResult<CommandOutput> {
+            self.commands
+                .push((command.to_string(), work_dir.map(str::to_string)));
+            Ok(self.command_results.pop_front().unwrap_or(CommandOutput {
+                output: String::new(),
+                exit_code: 0,
+            }))
+        }
+
         fn log_info(&mut self, message: &str) {
             self.logs.push(format!("INFO {message}"));
         }
@@ -240,7 +271,7 @@ pub mod mock {
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use gameap_plugin_sdk::host;
-    use gameap_plugin_sdk::proto::gameap::plugin::sdk::{games, nodefs, nodes, servers};
+    use gameap_plugin_sdk::proto::gameap::plugin::sdk::{games, nodecmd, nodefs, nodes, servers};
 
     use super::*;
 
@@ -363,6 +394,27 @@ mod wasm {
                 Ok(())
             } else {
                 Err(HostApiError::Op(resp.error.unwrap_or_default()))
+            }
+        }
+
+        fn execute_command(
+            &mut self,
+            node_id: u64,
+            command: &str,
+            work_dir: Option<&str>,
+        ) -> HostResult<CommandOutput> {
+            let resp = host::nodecmd::execute_command(&nodecmd::ExecuteCommandRequest {
+                node_id,
+                command: command.to_owned(),
+                work_dir: work_dir.map(str::to_owned),
+            })
+            .map_err(call_err)?;
+            match resp.error {
+                Some(err) => Err(HostApiError::Op(err)),
+                None => Ok(CommandOutput {
+                    output: resp.output,
+                    exit_code: resp.exit_code,
+                }),
             }
         }
 

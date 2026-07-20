@@ -53,6 +53,7 @@ pub struct StatePaths {
     pub amxx_plugins_ini: String,
     pub amxx_plugins_dir: String,
     pub amxx_configs_dir: String,
+    pub amxx_scripting_dir: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -102,6 +103,8 @@ pub struct AmxxPluginEntry {
     pub missing: bool,
     pub has_config: bool,
     pub config_path: Option<String>,
+    /// A matching `<stem>.sma` exists in the amxmodx scripting directory.
+    pub has_source: bool,
     /// Index of the display group; unnamed entries share one trailing "Other".
     pub group_index: u32,
     /// Header of the display group, `None` for the common "Other" group.
@@ -148,4 +151,33 @@ pub struct SetAttributesResponse {
     pub debug: bool,
     pub comment: Option<String>,
     pub changed: bool,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CompileRequest {
+    /// Name of the `.sma` file inside the amxmodx scripting directory.
+    pub file: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct CompileDiagnostic {
+    /// `error`, `fatal error` or `warning` as printed by amxxpc.
+    pub severity: String,
+    pub code: u32,
+    pub line: u32,
+    /// End line of a reported range, when present.
+    pub line_end: Option<u32>,
+    pub message: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct CompileResponse {
+    pub file: String,
+    pub success: bool,
+    pub exit_code: i32,
+    /// Raw amxxpc output, for the log view.
+    pub output: String,
+    pub diagnostics: Vec<CompileDiagnostic>,
+    /// The produced/updated `.amxx` file name (on success only).
+    pub amxx_file: Option<String>,
 }

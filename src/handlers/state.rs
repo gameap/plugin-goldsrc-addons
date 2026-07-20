@@ -67,6 +67,7 @@ pub fn handle<H: HostApi>(host: &mut H, params: &HashMap<String, String>) -> Api
 
     let plugins_files = list_dir_names(host, &ctx, &mut dir_cache, goldsrc::AMXX_PLUGINS_DIR)?;
     let configs_files = list_dir_names(host, &ctx, &mut dir_cache, goldsrc::AMXX_CONFIGS_DIR)?;
+    let scripting_files = list_dir_names(host, &ctx, &mut dir_cache, goldsrc::AMXX_SCRIPTING_DIR)?;
     let configs_lower: HashMap<String, String> = configs_files
         .iter()
         .map(|name| (name.to_ascii_lowercase(), name.clone()))
@@ -83,6 +84,7 @@ pub fn handle<H: HostApi>(host: &mut H, params: &HashMap<String, String>) -> Api
                 };
                 let (debug, comment) = ini::amxx_debug_comment(rest);
                 let missing = !plugins_files.contains(file);
+                let has_source = scripting_files.contains(&format!("{}.sma", paths::file_stem(file)));
                 let config_path = config_candidates(file)
                     .into_iter()
                     .find_map(|candidate| configs_lower.get(&candidate))
@@ -95,6 +97,7 @@ pub fn handle<H: HostApi>(host: &mut H, params: &HashMap<String, String>) -> Api
                     missing,
                     has_config: config_path.is_some(),
                     config_path,
+                    has_source,
                     group_index,
                     group_title: group_title.clone(),
                 });
@@ -115,6 +118,7 @@ pub fn handle<H: HostApi>(host: &mut H, params: &HashMap<String, String>) -> Api
             amxx_plugins_ini: ctx.rel(goldsrc::AMXX_PLUGINS_INI),
             amxx_plugins_dir: ctx.rel(goldsrc::AMXX_PLUGINS_DIR),
             amxx_configs_dir: ctx.rel(goldsrc::AMXX_CONFIGS_DIR),
+            amxx_scripting_dir: ctx.rel(goldsrc::AMXX_SCRIPTING_DIR),
         },
         metamod: MetamodState {
             installed: mm_installed,

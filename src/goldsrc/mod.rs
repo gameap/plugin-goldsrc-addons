@@ -1,3 +1,4 @@
+pub mod amxxpc;
 pub mod ini;
 pub mod liblist;
 pub mod moddir;
@@ -31,6 +32,7 @@ impl Platform {
 pub const AMXX_DIR: &str = "addons/amxmodx";
 pub const AMXX_PLUGINS_DIR: &str = "addons/amxmodx/plugins";
 pub const AMXX_CONFIGS_DIR: &str = "addons/amxmodx/configs";
+pub const AMXX_SCRIPTING_DIR: &str = "addons/amxmodx/scripting";
 pub const AMXX_PLUGINS_INI: &str = "addons/amxmodx/configs/plugins.ini";
 /// Default metamod dir when liblist.gam does not point at one.
 pub const METAMOD_DIR_DEFAULT: &str = "addons/metamod";

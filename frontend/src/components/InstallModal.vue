@@ -62,6 +62,23 @@
                 {{ validationError }}
             </n-alert>
 
+            <div v-if="compileErrors.length">
+                <n-alert type="error" :show-icon="true">
+                    {{ trans('compile_failed') }}
+                </n-alert>
+                <ul class="mt-2 space-y-1 text-xs font-mono">
+                    <li
+                        v-for="(diag, idx) in compileErrors"
+                        :key="idx"
+                        class="px-2 py-1 rounded bg-stone-50 dark:bg-stone-900 text-stone-700 dark:text-stone-200"
+                    >
+                        <span class="text-stone-400">{{ diag.severity === 'warning' ? 'W' : 'E' }}{{ diag.code }}</span>
+                        <span class="mx-1 text-orange-500">:{{ diag.line }}</span>
+                        {{ diag.message }}
+                    </li>
+                </ul>
+            </div>
+
             <div
                 v-if="isOverwrite && !validationError"
                 class="border border-orange-300 dark:border-orange-800 rounded p-3 bg-orange-50 dark:bg-orange-950/40"
@@ -111,9 +128,9 @@ import type { UploadFileInfo } from 'naive-ui';
 import { usePluginTrans } from '@gameap/plugin-sdk';
 
 import { fmEnsureDirectory, fmUploadFile } from '../api/gameap';
-import { apiErrorMessage, registerPlugin } from '../api/plugin';
-import { fileExtension, metamodDirName, prettyName } from '../lib/naming';
-import type { PlatformKind, StatePaths } from '../types';
+import { apiErrorMessage, compileSource, registerPlugin } from '../api/plugin';
+import { fileExtension, fileStem, metamodDirName, prettyName } from '../lib/naming';
+import type { CompileDiagnostic, PlatformKind, StatePaths } from '../types';
 
 const props = defineProps<{
     show: boolean;
@@ -135,6 +152,7 @@ const file = ref<File | null>(null);
 const autoEnable = ref(true);
 const uploading = ref(false);
 const progress = ref(0);
+const compileErrors = ref<CompileDiagnostic[]>([]);
 
 watch(
     () => props.show,
@@ -144,6 +162,7 @@ watch(
             autoEnable.value = true;
             uploading.value = false;
             progress.value = 0;
+            compileErrors.value = [];
         }
     },
 );
@@ -154,20 +173,25 @@ const validationError = computed(() => {
     }
     const ext = fileExtension(file.value.name);
     if (props.kind === 'amxx') {
-        if (ext === 'amxx') {
-            return null;
-        }
-        return ext === 'sma' ? trans('sma_rejected') : trans('wrong_type_amxx');
+        return ext === 'amxx' || ext === 'sma' ? null : trans('wrong_type_amxx');
     }
     return ext === 'so' || ext === 'dll' ? null : trans('wrong_type_metamod');
 });
+
+/** .sma sources compile into <stem>.amxx. */
+const isSource = computed(() =>
+    props.kind === 'amxx' && file.value !== null && fileExtension(file.value.name) === 'sma',
+);
 
 /** The picked file matches an already registered plugin. */
 const isOverwrite = computed(() => {
     if (!file.value) {
         return false;
     }
-    const name = file.value.name.toLowerCase();
+    // A source install overwrites the compiled plugin with the same stem.
+    const name = isSource.value
+        ? `${fileStem(file.value.name)}.amxx`.toLowerCase()
+        : file.value.name.toLowerCase();
     return props.existingFiles.some((existing) => existing.toLowerCase() === name);
 });
 
@@ -180,7 +204,9 @@ const addonsRoot = computed(() => {
 
 const targetPath = computed(() => {
     if (props.kind === 'amxx') {
-        return `${props.paths.amxx_plugins_dir}/`;
+        return isSource.value
+            ? `${props.paths.amxx_scripting_dir}/`
+            : `${props.paths.amxx_plugins_dir}/`;
     }
     const name = file.value ? metamodDirName(file.value.name) : '…';
     return `${addonsRoot.value}/${name}/`;
@@ -218,8 +244,11 @@ async function install(): Promise<void> {
     const replaced = isOverwrite.value;
     uploading.value = true;
     progress.value = 0;
+    compileErrors.value = [];
     try {
-        if (props.kind === 'amxx') {
+        if (isSource.value) {
+            await installFromSource(picked, replaced);
+        } else if (props.kind === 'amxx') {
             await fmUploadFile(props.serverId, props.paths.amxx_plugins_dir, picked, (percent) => {
                 progress.value = percent;
             });
@@ -251,5 +280,23 @@ async function install(): Promise<void> {
     } finally {
         uploading.value = false;
     }
+}
+
+/** Uploads a .sma into scripting/, compiles it and registers the result. */
+async function installFromSource(picked: File, replaced: boolean): Promise<void> {
+    await fmUploadFile(props.serverId, props.paths.amxx_scripting_dir, picked, (percent) => {
+        progress.value = percent;
+    });
+    const result = await compileSource(props.pluginId, props.serverId, picked.name);
+    if (!result.success || !result.amxx_file) {
+        // The source stays in scripting/ so it can be fixed and recompiled.
+        compileErrors.value = result.diagnostics;
+        throw new Error(trans('compile_failed'));
+    }
+    await registerPlugin(props.pluginId, props.serverId, 'amxx', {
+        file: result.amxx_file,
+        enable: autoEnable.value,
+        force: replaced,
+    });
 }
 </script>

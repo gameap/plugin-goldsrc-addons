@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 
-import type { PlatformKind, StateResponse } from '../types';
+import type { CompileResponse, PlatformKind, StateResponse } from '../types';
 
 function base(pluginId: string): string {
     return `/api/plugins/${pluginId}`;
@@ -60,6 +60,19 @@ export async function deletePlugin(
         data: { file },
         params: { file },
     });
+}
+
+/** POST /servers/{id}/amxx/sources/compile — runs amxxpc on the node. */
+export async function compileSource(
+    pluginId: string,
+    serverId: number,
+    file: string,
+): Promise<CompileResponse> {
+    const response = await axios.post(
+        `${base(pluginId)}/servers/${serverId}/amxx/sources/compile`,
+        { file },
+    );
+    return response.data as CompileResponse;
 }
 
 /** Human-oriented message from a backend error response. */

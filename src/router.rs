@@ -17,6 +17,7 @@ pub enum RouteId {
     SetAttributes,
     AddPlugin,
     RemovePlugin,
+    CompileSource,
 }
 
 pub struct RouteDef {
@@ -56,6 +57,12 @@ pub const ROUTES: &[RouteDef] = &[
         method: "DELETE",
         pattern: "/servers/{id}/{platform}/plugins",
         description: "Remove a plugins.ini entry and delete the plugin file",
+    },
+    RouteDef {
+        id: RouteId::CompileSource,
+        method: "POST",
+        pattern: "/servers/{id}/{platform}/sources/compile",
+        description: "Compile a .sma source with the server's amxxpc into the plugins dir",
     },
 ];
 
@@ -110,6 +117,7 @@ pub fn dispatch<H: HostApi>(host: &mut H, req: &pb::HttpRequest) -> pb::HttpResp
         RouteId::RemovePlugin => {
             handlers::remove::handle(host, &params, &req.body, &req.query_params)
         }
+        RouteId::CompileSource => handlers::compile::handle(host, &params, &req.body),
     };
     result.unwrap_or_else(ApiError::into_response)
 }
@@ -134,6 +142,11 @@ mod tests {
 
         let (id, _) = match_route("DELETE", "servers/3/amxx/plugins").expect("route matches");
         assert_eq!(id, RouteId::RemovePlugin);
+
+        let (id, params) =
+            match_route("POST", "/servers/3/amxx/sources/compile").expect("route matches");
+        assert_eq!(id, RouteId::CompileSource);
+        assert_eq!(params.get("platform").map(String::as_str), Some("amxx"));
     }
 
     #[test]

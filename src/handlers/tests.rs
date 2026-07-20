@@ -4,6 +4,7 @@ use gameap_plugin_sdk::proto::gameap::plugin as pb;
 use serde_json::Value;
 
 use crate::host_api::mock::MockHost;
+use crate::host_api::CommandOutput;
 use crate::router::dispatch;
 
 const MOD: &str = MockHost::MOD_ABS;
@@ -41,6 +42,11 @@ fn full_setup() -> MockHost {
     host.add_file(&format!("{MOD}/addons/amxmodx/plugins/statsx.amxx"), b"amxx");
     host.add_file(&format!("{MOD}/addons/amxmodx/plugins/parachute.amxx"), b"amxx");
     host.add_file(&format!("{MOD}/addons/amxmodx/configs/stats.ini"), b"cfg");
+    host.add_file(&format!("{MOD}/addons/amxmodx/scripting/amxxpc"), b"elf");
+    host.add_file(
+        &format!("{MOD}/addons/amxmodx/scripting/admin.sma"),
+        b"#include <amxmodx>\n",
+    );
     host
 }
 
@@ -72,8 +78,14 @@ fn state_full_setup() {
     assert_eq!(amxx_plugins.len(), 3);
     assert_eq!(amxx_plugins[0]["file"], "admin.amxx");
     assert_eq!(amxx_plugins[0]["has_config"], false);
+    assert_eq!(amxx_plugins[0]["has_source"], true);
     assert_eq!(amxx_plugins[1]["file"], "statsx.amxx");
     assert_eq!(amxx_plugins[1]["has_config"], true);
+    assert_eq!(amxx_plugins[1]["has_source"], false);
+    assert_eq!(
+        body["paths"]["amxx_scripting_dir"],
+        "cstrike/addons/amxmodx/scripting"
+    );
     assert_eq!(
         amxx_plugins[1]["config_path"],
         "cstrike/addons/amxmodx/configs/stats.ini"
@@ -620,4 +632,133 @@ fn attributes_unknown_plugin() {
     );
     assert_eq!(resp.status_code, 404);
     assert_eq!(json(&resp)["code"], "PLUGIN_NOT_REGISTERED");
+}
+
+#[test]
+fn compile_success() {
+    let mut host = full_setup();
+    host.command_results.push_back(CommandOutput {
+        output: "AMX Mod X Compiler 1.9.0.5294\nDone.\n".into(),
+        exit_code: 0,
+    });
+    let resp = dispatch(
+        &mut host,
+        &request(
+            "POST",
+            "/servers/3/amxx/sources/compile",
+            br#"{"file":"admin.sma"}"#,
+        ),
+    );
+    assert_eq!(resp.status_code, 200, "{}", String::from_utf8_lossy(&resp.body));
+    let body = json(&resp);
+    assert_eq!(body["success"], true);
+    assert_eq!(body["amxx_file"], "admin.amxx");
+    assert_eq!(body["diagnostics"].as_array().expect("array").len(), 0);
+
+    let (command, work_dir) = host.commands.first().expect("command recorded");
+    assert!(
+        command.contains("addons/amxmodx/scripting/amxxpc\" \""),
+        "{command}"
+    );
+    assert!(
+        command.contains("-o\"/srv/gameap/servers/cs/cstrike/addons/amxmodx/plugins/admin.amxx\""),
+        "{command}"
+    );
+    assert_eq!(
+        work_dir.as_deref(),
+        Some("/srv/gameap/servers/cs/cstrike/addons/amxmodx/scripting")
+    );
+}
+
+#[test]
+fn compile_failure_reports_diagnostics() {
+    let mut host = full_setup();
+    host.command_results.push_back(CommandOutput {
+        output: "scripting/admin.sma(2) : error 017: undefined symbol \"foo\"\n1 Error.\nCould not locate output file scripting/admin.amx (compile failed).\n".into(),
+        exit_code: 1,
+    });
+    let resp = dispatch(
+        &mut host,
+        &request(
+            "POST",
+            "/servers/3/amxx/sources/compile",
+            br#"{"file":"admin.sma"}"#,
+        ),
+    );
+    assert_eq!(resp.status_code, 200, "{}", String::from_utf8_lossy(&resp.body));
+    let body = json(&resp);
+    assert_eq!(body["success"], false);
+    assert_eq!(body["amxx_file"], Value::Null);
+    let diags = body["diagnostics"].as_array().expect("array");
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0]["severity"], "error");
+    assert_eq!(diags[0]["code"], 17);
+    assert_eq!(diags[0]["line"], 2);
+    assert_eq!(diags[0]["message"], "undefined symbol \"foo\"");
+    // The previously compiled binary stays in place (amxxpc never clobbers it).
+    assert!(
+        host.file(&format!("{MOD}/addons/amxmodx/plugins/admin.amxx"))
+            .is_some()
+    );
+}
+
+#[test]
+fn compile_source_not_found() {
+    let mut host = full_setup();
+    let resp = dispatch(
+        &mut host,
+        &request(
+            "POST",
+            "/servers/3/amxx/sources/compile",
+            br#"{"file":"nope.sma"}"#,
+        ),
+    );
+    assert_eq!(resp.status_code, 404);
+    assert_eq!(json(&resp)["code"], "SOURCE_NOT_FOUND");
+}
+
+#[test]
+fn compile_compiler_not_found() {
+    let mut host = full_setup();
+    host.files
+        .remove(&format!("{MOD}/addons/amxmodx/scripting/amxxpc"));
+    let resp = dispatch(
+        &mut host,
+        &request(
+            "POST",
+            "/servers/3/amxx/sources/compile",
+            br#"{"file":"admin.sma"}"#,
+        ),
+    );
+    assert_eq!(resp.status_code, 422);
+    assert_eq!(json(&resp)["code"], "COMPILER_NOT_FOUND");
+}
+
+#[test]
+fn compile_rejects_metamod_platform() {
+    let mut host = full_setup();
+    let resp = dispatch(
+        &mut host,
+        &request(
+            "POST",
+            "/servers/3/metamod/sources/compile",
+            br#"{"file":"admin.sma"}"#,
+        ),
+    );
+    assert_eq!(resp.status_code, 404);
+}
+
+#[test]
+fn compile_rejects_non_sma_file() {
+    let mut host = full_setup();
+    let resp = dispatch(
+        &mut host,
+        &request(
+            "POST",
+            "/servers/3/amxx/sources/compile",
+            br#"{"file":"admin.amxx"}"#,
+        ),
+    );
+    assert_eq!(resp.status_code, 422);
+    assert_eq!(json(&resp)["code"], "INVALID_FILE_TYPE");
 }

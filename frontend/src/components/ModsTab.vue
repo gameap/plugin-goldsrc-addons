@@ -114,6 +114,7 @@
                             @bulk="onBulk"
                             @install="openInstall"
                             @configure="openConfig"
+                            @edit-source="openSource"
                             @open-files="openFileManager"
                         />
                     </template>
@@ -133,6 +134,13 @@
                     :server-id="serverId"
                     :row="configRow"
                 />
+                <SourceModal
+                    v-model:show="sourceOpen"
+                    :server-id="serverId"
+                    :plugin-id="pluginId"
+                    :row="sourceRow"
+                    @compiled="onCompiled"
+                />
             </template>
         </template>
     </div>
@@ -147,6 +155,7 @@ import ConfigModal from './ConfigModal.vue';
 import InstallModal from './InstallModal.vue';
 import PlatformCard from './PlatformCard.vue';
 import PluginList from './PluginList.vue';
+import SourceModal from './SourceModal.vue';
 import { RconError, rcon, restartServer } from '../api/gameap';
 import { apiErrorMessage, deletePlugin, getState, setAttributes, togglePlugin } from '../api/plugin';
 import {
@@ -156,7 +165,7 @@ import {
     parseMetaList,
     parseMetaVersion,
 } from '../lib/rcon-parse';
-import { prettyName } from '../lib/naming';
+import { prettyName, fileStem } from '../lib/naming';
 import type {
     PlatformKind,
     PlatformVersion,
@@ -194,6 +203,8 @@ const installExistingFiles = computed(() =>
 );
 const configOpen = ref(false);
 const configRow = ref<PluginRow | null>(null);
+const sourceOpen = ref(false);
+const sourceRow = ref<PluginRow | null>(null);
 
 const serverGame = computed(() => {
     return (props.server as unknown as { game?: { engine?: string } } | undefined)?.game;
@@ -249,7 +260,7 @@ function buildRow(
     configPath: string | null,
     fallbackName: string,
     runtimeList: RuntimePluginInfo[],
-): Omit<PluginRow, 'debug' | 'comment' | 'groupIndex' | 'groupTitle'> {
+): Omit<PluginRow, 'debug' | 'comment' | 'groupIndex' | 'groupTitle' | 'hasSource' | 'sourcePath'> {
     const runtime = runtimeList.find((item) => matchesListedFile(item.file, file)) ?? null;
 
     let status: RowStatus;
@@ -309,6 +320,10 @@ const amxxRows = computed<PluginRow[]>(() => {
         ),
         debug: entry.debug,
         comment: entry.comment,
+        hasSource: entry.has_source,
+        sourcePath: entry.has_source
+            ? `${state.value.paths.amxx_scripting_dir}/${fileStem(entry.file)}.sma`
+            : null,
         groupIndex: entry.group_index,
         groupTitle: entry.group_title,
     }));
@@ -333,6 +348,8 @@ const metamodRows = computed<PluginRow[]>(() => {
         ),
         debug: false,
         comment: entry.description,
+        hasSource: false,
+        sourcePath: null,
         groupIndex: entry.group_index,
         groupTitle: entry.group_title,
     }));
@@ -543,6 +560,18 @@ async function onInstalled(): Promise<void> {
 function openConfig(row: PluginRow): void {
     configRow.value = row;
     configOpen.value = true;
+}
+
+function openSource(row: PluginRow): void {
+    sourceRow.value = row;
+    sourceOpen.value = true;
+}
+
+async function onCompiled(): Promise<void> {
+    // The .amxx on disk changed — a restart/map change loads the new build.
+    restartRequired.value = true;
+    restartDismissed.value = false;
+    await refreshState();
 }
 
 function openFileManager(): void {

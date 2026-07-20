@@ -1,5 +1,6 @@
 pub mod add;
 pub mod attributes;
+pub mod compile;
 pub mod ctx;
 pub mod remove;
 pub mod state;

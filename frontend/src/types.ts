@@ -10,6 +10,7 @@ export interface StatePaths {
     amxx_plugins_ini: string;
     amxx_plugins_dir: string;
     amxx_configs_dir: string;
+    amxx_scripting_dir: string;
 }
 
 export interface MetamodPluginEntry {
@@ -32,6 +33,7 @@ export interface AmxxPluginEntry {
     missing: boolean;
     has_config: boolean;
     config_path: string | null;
+    has_source: boolean;
     group_index: number;
     group_title: string | null;
 }
@@ -97,6 +99,10 @@ export interface PluginRow {
     runtime: RuntimePluginInfo | null;
     hasConfig: boolean;
     configPath: string | null;
+    /** A matching .sma exists in the amxmodx scripting dir (AMXX only). */
+    hasSource: boolean;
+    /** Panel file-manager path of the .sma source, when hasSource. */
+    sourcePath: string | null;
     status: RowStatus;
     statusDetail: string | null;
     /** Display group id; unnamed entries share one trailing "Other" group. */
@@ -112,6 +118,25 @@ export type RowStatus =
     | 'pending'
     | 'error'
     | 'missing';
+
+// Mirrors of the compile endpoint DTOs.
+
+export interface CompileDiagnostic {
+    severity: string;
+    code: number;
+    line: number;
+    line_end: number | null;
+    message: string;
+}
+
+export interface CompileResponse {
+    file: string;
+    success: boolean;
+    exit_code: number;
+    output: string;
+    diagnostics: CompileDiagnostic[];
+    amxx_file: string | null;
+}
 
 // Local mirror of the SDK's ServerData / ServerTabProps contract.
 //

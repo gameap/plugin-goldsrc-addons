@@ -130,6 +130,7 @@ const emit = defineEmits<{
     bulk: [kind: PlatformKind, action: 'enable' | 'disable' | 'delete', rows: PluginRow[]];
     install: [kind: PlatformKind];
     configure: [row: PluginRow];
+    'edit-source': [row: PluginRow];
     'open-files': [];
 }>();
 
@@ -583,6 +584,13 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
                     return null;
                 }
                 const buttons = [];
+                if (row.hasSource) {
+                    buttons.push(
+                        renderActionButton('white', 'fa-solid fa-code', trans('action_source'), () =>
+                            emit('edit-source', row),
+                        ),
+                    );
+                }
                 if (row.hasConfig) {
                     buttons.push(
                         renderActionButton('white', 'fa-solid fa-gear', trans('action_config'), () =>
