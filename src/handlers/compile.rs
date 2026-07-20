@@ -47,10 +47,8 @@ pub fn handle<H: HostApi>(
 
     let binary = amxxpc::compiler_binary(&node.os);
     let compiler_abs = paths::join(&scripting_abs, binary);
-    if host
-        .stat(context.node_id, &compiler_abs)?
-        .is_none_or(|s| s.is_dir)
-    {
+    let compiler_stat = host.stat(context.node_id, &compiler_abs)?;
+    if compiler_stat.is_none_or(|s| s.is_dir) {
         return Err(ApiError::unprocessable(
             "COMPILER_NOT_FOUND",
             format!(
@@ -58,6 +56,15 @@ pub fn handle<H: HostApi>(
                 goldsrc::AMXX_SCRIPTING_DIR
             ),
         ));
+    }
+
+    // Archives usually lose the exec bit; restore it before fork/exec.
+    if !node.os.eq_ignore_ascii_case("windows")
+        && let Some(stat) = compiler_stat
+        && stat.permissions & 0o111 == 0
+    {
+        host.log_info(&format!("{binary} is not executable; restoring permissions"));
+        host.chmod(context.node_id, &compiler_abs, stat.permissions | 0o755)?;
     }
 
     let stem = paths::file_stem(&request.file);

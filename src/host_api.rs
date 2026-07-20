@@ -45,6 +45,8 @@ pub struct DirEntry {
 pub struct FileStat {
     pub is_dir: bool,
     pub size: u64,
+    /// Unix permission bits (0 when the node does not report them).
+    pub permissions: u32,
 }
 
 /// Result of a command executed on a node (nodecmd).
@@ -66,6 +68,7 @@ pub trait HostApi {
     fn upload(&mut self, node_id: u64, path: &str, content: &[u8], permissions: u32)
     -> HostResult<()>;
     fn remove(&mut self, node_id: u64, path: &str, recursive: bool) -> HostResult<()>;
+    fn chmod(&mut self, node_id: u64, path: &str, permissions: u32) -> HostResult<()>;
     fn execute_command(
         &mut self,
         node_id: u64,
@@ -92,8 +95,12 @@ pub mod mock {
         pub nodes: BTreeMap<u64, NodeInfo>,
         /// Absolute path → file content.
         pub files: BTreeMap<String, Vec<u8>>,
+        /// Absolute path → unix permission bits (files default to 0o644).
+        pub perms: BTreeMap<String, u32>,
         /// Absolute paths of directories.
         pub dirs: BTreeSet<String>,
+        /// chmod calls, in call order.
+        pub chmods: Vec<(String, u32)>,
         /// Commands passed to execute_command, in call order.
         pub commands: Vec<(String, Option<String>)>,
         /// Canned execute_command results, popped one per call.
@@ -155,6 +162,10 @@ pub mod mock {
         pub fn file(&self, path: &str) -> Option<&[u8]> {
             self.files.get(path).map(Vec::as_slice)
         }
+
+        pub fn set_perms(&mut self, path: &str, permissions: u32) {
+            self.perms.insert(path.to_string(), permissions);
+        }
     }
 
     impl HostApi for MockHost {
@@ -208,12 +219,14 @@ pub mod mock {
                 return Ok(Some(FileStat {
                     is_dir: false,
                     size: content.len() as u64,
+                    permissions: self.perms.get(path).copied().unwrap_or(0o644),
                 }));
             }
             if self.dirs.contains(path) {
                 return Ok(Some(FileStat {
                     is_dir: true,
                     size: 0,
+                    permissions: 0o755,
                 }));
             }
             Ok(None)
@@ -241,6 +254,15 @@ pub mod mock {
             if self.files.remove(path).is_none() {
                 return Err(HostApiError::Op(format!("no such file: {path}")));
             }
+            Ok(())
+        }
+
+        fn chmod(&mut self, _node_id: u64, path: &str, permissions: u32) -> HostResult<()> {
+            if !self.files.contains_key(path) && !self.dirs.contains(path) {
+                return Err(HostApiError::Op(format!("no such file: {path}")));
+            }
+            self.chmods.push((path.to_string(), permissions));
+            self.perms.insert(path.to_string(), permissions);
             Ok(())
         }
 
@@ -347,6 +369,7 @@ mod wasm {
             Ok(resp.found.then_some(resp.file).flatten().map(|f| FileStat {
                 is_dir: f.r#type == dir_type,
                 size: f.size,
+                permissions: f.permissions,
             }))
         }
 
@@ -388,6 +411,20 @@ mod wasm {
                 node_id,
                 path: path.to_owned(),
                 recursive,
+            })
+            .map_err(call_err)?;
+            if resp.success {
+                Ok(())
+            } else {
+                Err(HostApiError::Op(resp.error.unwrap_or_default()))
+            }
+        }
+
+        fn chmod(&mut self, node_id: u64, path: &str, permissions: u32) -> HostResult<()> {
+            let resp = host::nodefs::chmod(&nodefs::ChmodRequest {
+                node_id,
+                path: path.to_owned(),
+                permissions,
             })
             .map_err(call_err)?;
             if resp.success {

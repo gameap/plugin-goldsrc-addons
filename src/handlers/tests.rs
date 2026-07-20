@@ -43,6 +43,7 @@ fn full_setup() -> MockHost {
     host.add_file(&format!("{MOD}/addons/amxmodx/plugins/parachute.amxx"), b"amxx");
     host.add_file(&format!("{MOD}/addons/amxmodx/configs/stats.ini"), b"cfg");
     host.add_file(&format!("{MOD}/addons/amxmodx/scripting/amxxpc"), b"elf");
+    host.set_perms(&format!("{MOD}/addons/amxmodx/scripting/amxxpc"), 0o755);
     host.add_file(
         &format!("{MOD}/addons/amxmodx/scripting/admin.sma"),
         b"#include <amxmodx>\n",
@@ -732,6 +733,31 @@ fn compile_compiler_not_found() {
     );
     assert_eq!(resp.status_code, 422);
     assert_eq!(json(&resp)["code"], "COMPILER_NOT_FOUND");
+}
+
+#[test]
+fn compile_fixes_missing_exec_permission() {
+    let mut host = full_setup();
+    host.set_perms(&format!("{MOD}/addons/amxmodx/scripting/amxxpc"), 0o644);
+    host.command_results.push_back(CommandOutput {
+        output: "Done.\n".into(),
+        exit_code: 0,
+    });
+    let resp = dispatch(
+        &mut host,
+        &request(
+            "POST",
+            "/servers/3/amxx/sources/compile",
+            br#"{"file":"admin.sma"}"#,
+        ),
+    );
+    assert_eq!(resp.status_code, 200, "{}", String::from_utf8_lossy(&resp.body));
+    assert_eq!(json(&resp)["success"], true);
+    assert_eq!(
+        host.chmods,
+        vec![(format!("{MOD}/addons/amxmodx/scripting/amxxpc"), 0o755)]
+    );
+    assert_eq!(host.commands.len(), 1);
 }
 
 #[test]
