@@ -227,7 +227,7 @@ const emptyText = computed(() =>
 );
 
 const columnCount = computed(() => (props.kind === 'amxx' ? 7 : 6));
-const scrollX = computed(() => (props.kind === 'amxx' ? 940 : 860));
+const scrollX = computed(() => (props.kind === 'amxx' ? 980 : 920));
 
 const rowKey = (row: TableRow) => row.key;
 const rowClassName = (row: TableRow) => (isHeader(row) ? 'gsa-group-row' : '');
@@ -339,14 +339,14 @@ function renderComment(row: PluginRow): ReturnType<typeof h> | null {
         return row.comment
             ? h(
                   'div',
-                  { class: 'mt-0.5 text-xs text-stone-500 dark:text-stone-400 truncate' },
+                  { class: 'mt-0.5 text-xs text-stone-500 dark:text-stone-400 break-words' },
                   row.comment,
               )
             : null;
     }
     if (editingKey.value === row.key) {
         return h('input', {
-            class: 'mt-0.5 w-full max-w-xs text-xs px-1.5 py-0.5 rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-200 focus:outline-none focus:ring-1 focus:ring-emerald-400',
+            class: 'mt-0.5 w-full text-xs px-1.5 py-0.5 rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-200 focus:outline-none focus:ring-1 focus:ring-emerald-400',
             value: editText.value,
             placeholder: trans('comment_placeholder'),
             onInput: (event: Event) => {
@@ -369,7 +369,7 @@ function renderComment(row: PluginRow): ReturnType<typeof h> | null {
         });
     }
     const text = row.comment
-        ? h('span', { class: 'truncate' }, row.comment)
+        ? h('span', { class: 'break-words min-w-0' }, row.comment)
         : h('span', { class: 'italic opacity-50' }, trans('comment_add'));
     const pencil = h(
         'button',
@@ -384,7 +384,7 @@ function renderComment(row: PluginRow): ReturnType<typeof h> | null {
     return h(
         'div',
         {
-            class: 'mt-0.5 flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400 min-w-0',
+            class: 'mt-0.5 flex items-start gap-1.5 text-xs text-stone-500 dark:text-stone-400 min-w-0',
         },
         [text, pencil],
     );
@@ -399,7 +399,7 @@ function renderActionButton(
     return h(
         'button',
         {
-            class: `inline-flex items-center align-middle text-center select-none whitespace-nowrap rounded text-xs py-1.5 px-2 mr-1 ${buttonClasses(color)}`,
+            class: `inline-flex items-center justify-center align-middle text-center select-none whitespace-nowrap rounded text-xs py-1.5 px-1.5 w-10 lg:w-24 ${buttonClasses(color)}`,
             disabled: props.busy,
             onClick,
         },
@@ -478,7 +478,7 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
         {
             title: trans('col_version'),
             key: 'version',
-            width: 170,
+            width: 120,
             render(row: TableRow) {
                 if (isHeader(row)) {
                     return null;
@@ -501,7 +501,7 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
         {
             title: trans('col_status'),
             key: 'status',
-            width: 160,
+            width: 120,
             render(row: TableRow) {
                 if (isHeader(row)) {
                     return null;
@@ -530,7 +530,7 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
         cols.push({
             title: trans('col_debug'),
             key: 'debug',
-            width: 72,
+            width: 60,
             align: 'center',
             render(row: TableRow) {
                 if (isHeader(row)) {
@@ -555,7 +555,7 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
         {
             title: trans('col_enabled'),
             key: 'enabled',
-            width: 70,
+            width: 56,
             align: 'center',
             render(row: TableRow) {
                 if (isHeader(row)) {
@@ -581,16 +581,35 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
             title: trans('col_actions'),
             key: 'actions',
             align: 'right',
-            width: 220,
+            width: 420,
             render(row: TableRow) {
                 if (isHeader(row)) {
                     return null;
                 }
+                const spacer = () => h('span', { class: 'inline-block w-10 lg:w-24' });
                 const buttons = [];
                 const pauseAction =
                     props.kind === 'amxx' && !row.system
                         ? pauseActionForStatus(row.status)
                         : null;
+                if (row.hasSource) {
+                    buttons.push(
+                        renderActionButton('white', 'fa-solid fa-code', trans('action_source'), () =>
+                            emit('edit-source', row),
+                        ),
+                    );
+                } else {
+                    buttons.push(spacer());
+                }
+                if (row.hasConfig) {
+                    buttons.push(
+                        renderActionButton('white', 'fa-solid fa-gear', trans('action_config'), () =>
+                            emit('configure', row),
+                        ),
+                    );
+                } else {
+                    buttons.push(spacer());
+                }
                 if (pauseAction === 'pause') {
                     buttons.push(
                         renderActionButton('white', 'fa-solid fa-pause', trans('action_pause'), () =>
@@ -603,20 +622,8 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
                             emit('pause', props.kind, row, false),
                         ),
                     );
-                }
-                if (row.hasSource) {
-                    buttons.push(
-                        renderActionButton('white', 'fa-solid fa-code', trans('action_source'), () =>
-                            emit('edit-source', row),
-                        ),
-                    );
-                }
-                if (row.hasConfig) {
-                    buttons.push(
-                        renderActionButton('white', 'fa-solid fa-gear', trans('action_config'), () =>
-                            emit('configure', row),
-                        ),
-                    );
+                } else {
+                    buttons.push(spacer());
                 }
                 if (row.system) {
                     buttons.push(
@@ -628,7 +635,7 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
                                     h(
                                         'span',
                                         {
-                                            class: 'inline-flex items-center justify-center w-7 h-7 text-stone-400 dark:text-stone-500',
+                                            class: 'inline-flex items-center justify-center w-10 lg:w-24 h-7 text-stone-400 dark:text-stone-500',
                                         },
                                         h('i', { class: 'fa-solid fa-lock' }),
                                     ),
@@ -643,7 +650,7 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
                         ),
                     );
                 }
-                return h('div', { class: 'flex justify-end items-center' }, buttons);
+                return h('div', { class: 'flex justify-end items-center gap-1' }, buttons);
             },
         },
     );
