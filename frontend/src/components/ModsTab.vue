@@ -29,24 +29,28 @@
                     <span>{{ rconHint }}</span>
                 </div>
 
-                <!-- platform cards -->
-                <div class="grid md:grid-cols-2 gap-3 mb-3">
+                <!-- platform cards double as tab triggers -->
+                <div class="platform-cards grid md:grid-cols-2 gap-3 mb-3" role="tablist">
                     <PlatformCard
                         kind="metamod"
                         :state="state"
                         :version="metaVersion"
                         :rows="metamodRows"
+                        :active="activeList === 'metamod'"
+                        @select="activeList = 'metamod'"
                     />
                     <PlatformCard
                         kind="amxx"
                         :state="state"
                         :version="amxxVersion"
                         :rows="amxxRows"
+                        :active="activeList === 'amxx'"
+                        @select="activeList = 'amxx'"
                     />
                 </div>
 
                 <!-- plugin lists -->
-                <n-card size="small">
+                <n-card size="small" class="plugins-panel" role="tabpanel">
                     <template v-if="nothingInstalled">
                         <div class="py-12 text-center">
                             <i class="fa-solid fa-puzzle-piece fa-2x text-stone-300 dark:text-stone-600"></i>
@@ -60,28 +64,6 @@
                     </template>
 
                     <template v-else>
-                        <n-tabs
-                            :value="activeList"
-                            type="segment"
-                            animated
-                            size="small"
-                            class="max-w-md mb-1"
-                            @update:value="(value: string) => (activeList = value as PlatformKind)"
-                        >
-                            <n-tab-pane name="amxx">
-                                <template #tab>
-                                    AMX Mod X
-                                    <span class="ml-1 text-stone-400">{{ amxxRows.length }}</span>
-                                </template>
-                            </n-tab-pane>
-                            <n-tab-pane name="metamod">
-                                <template #tab>
-                                    Metamod
-                                    <span class="ml-1 text-stone-400">{{ metamodRows.length }}</span>
-                                </template>
-                            </n-tab-pane>
-                        </n-tabs>
-
                         <PluginList
                             :key="activeList"
                             :kind="activeList"
@@ -131,7 +113,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { NCard, NEmpty, NTabPane, NTabs } from 'naive-ui';
+import { NCard, NEmpty } from 'naive-ui';
 import { providePluginTrans } from '@gameap/plugin-sdk';
 
 import ConfigModal from './ConfigModal.vue';
@@ -591,3 +573,23 @@ onMounted(() => {
     }
 });
 </script>
+
+<style scoped>
+/* On md+ screens the platform cards sit flush above this panel and the active
+ * one reads as a tab merged into it: no gap between the row and the panel, no
+ * top border or rounding on the panel (the active card drops its bottom
+ * border, the inactive one keeps it as the tab-row line). Doubled selectors
+ * beat naive-ui's runtime-injected .n-card styles; the margin lives here
+ * because the host panel's prebuilt Tailwind may lack arbitrary utilities. */
+@media (min-width: 768px) {
+    .platform-cards {
+        margin-bottom: 0;
+    }
+
+    .plugins-panel.plugins-panel {
+        border-top: none;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+    }
+}
+</style>

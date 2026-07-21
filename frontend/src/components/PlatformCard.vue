@@ -1,5 +1,15 @@
 <template>
-    <n-card size="small">
+    <n-card
+        size="small"
+        role="tab"
+        tabindex="0"
+        :aria-selected="active"
+        class="platform-card"
+        :class="active ? 'platform-card--active' : 'platform-card--inactive'"
+        @click="emit('select')"
+        @keydown.enter.prevent="emit('select')"
+        @keydown.space.prevent="emit('select')"
+    >
         <div class="flex items-start gap-3">
             <div
                 class="w-10 h-10 rounded-lg bg-stone-700 dark:bg-stone-900 text-white flex items-center justify-center flex-shrink-0"
@@ -70,6 +80,11 @@ const props = defineProps<{
     state: StateResponse;
     version: PlatformVersion | null;
     rows: PluginRow[];
+    active?: boolean;
+}>();
+
+const emit = defineEmits<{
+    (e: 'select'): void;
 }>();
 
 const { trans } = usePluginTrans();
@@ -101,3 +116,82 @@ const errorCount = computed(
     () => props.rows.filter((row) => row.status === 'error' || row.status === 'missing').length,
 );
 </script>
+
+<style scoped>
+/*
+ * The card doubles as a tab trigger. On md+ screens the active card merges with
+ * the plugin-list panel below it: no bottom rounding, no bottom border, and the
+ * panel has no top border (see ModsTab.vue) — so nothing separates the two.
+ * The inactive card keeps its bottom border, which reads as the tab-row line.
+ * Doubled class selectors keep specificity above naive-ui's runtime-injected
+ * .n-card styles.
+ */
+.platform-card {
+    cursor: pointer;
+    user-select: none;
+    transition:
+        background-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.platform-card:focus-visible {
+    outline: 2px solid #22c55e;
+    outline-offset: 1px;
+}
+
+/* Narrow screens: cards are stacked, so the active one gets an accent ring. */
+.platform-card.platform-card--active {
+    box-shadow: inset 0 0 0 2px #57534e;
+}
+
+.platform-card.platform-card--inactive:hover {
+    box-shadow: inset 0 0 0 1px #d6d3d1;
+}
+
+@media (min-width: 768px) {
+    .platform-card {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+    .platform-card.platform-card--active {
+        border-bottom-color: transparent;
+        box-shadow: none;
+    }
+
+    .platform-card.platform-card--inactive {
+        background-color: #f5f5f4;
+    }
+
+    .platform-card.platform-card--inactive:hover {
+        background-color: #ffffff;
+        box-shadow: none;
+    }
+}
+</style>
+
+<!-- Dark-theme variants. The host panel toggles .dark on <html>, and scoped
+     :global() selectors get mangled by the build — keep these unscoped. -->
+<style>
+.dark .platform-card.platform-card--active {
+    box-shadow: inset 0 0 0 2px #d6d3d1;
+}
+
+.dark .platform-card.platform-card--inactive:hover {
+    box-shadow: inset 0 0 0 1px #57534e;
+}
+
+@media (min-width: 768px) {
+    .dark .platform-card.platform-card--active {
+        box-shadow: none;
+    }
+
+    .dark .platform-card.platform-card--inactive {
+        background-color: rgba(12, 10, 9, 0.6);
+    }
+
+    .dark .platform-card.platform-card--inactive:hover {
+        background-color: rgba(12, 10, 9, 0.1);
+    }
+}
+</style>
