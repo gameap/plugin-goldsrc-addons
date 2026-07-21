@@ -65,7 +65,8 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
 
             status_running: 'Running',
             status_enabled: 'Enabled',
-            status_stopped: 'Disabled',
+            status_paused: 'Paused',
+            status_stopped: 'Stopped',
             status_pending: 'Awaiting restart',
             status_error: 'Error',
             status_missing: 'File missing',
@@ -208,7 +209,8 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
 
             status_running: 'Работает',
             status_enabled: 'Включен',
-            status_stopped: 'Выключен',
+            status_paused: 'На паузе',
+            status_stopped: 'Остановлен',
             status_pending: 'Ждёт перезапуска',
             status_error: 'Ошибка',
             status_missing: 'Файл отсутствует',

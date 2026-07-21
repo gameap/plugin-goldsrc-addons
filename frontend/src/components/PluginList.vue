@@ -291,6 +291,7 @@ function statusMeta(row: PluginRow): { cls: string; text: string } {
     const map: Record<RowStatus, { cls: string; key: string }> = {
         running: { cls: 'badge-green', key: 'status_running' },
         enabled: { cls: 'badge-green', key: 'status_enabled' },
+        paused: { cls: 'badge-orange', key: 'status_paused' },
         stopped: { cls: 'badge-stone', key: 'status_stopped' },
         pending: { cls: 'badge-orange', key: 'status_pending' },
         error: { cls: 'badge-red', key: 'status_error' },

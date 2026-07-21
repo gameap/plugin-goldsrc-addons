@@ -68,10 +68,14 @@ export function parseMetaList(output: string): RuntimePluginInfo[] {
  *   [  1] Admin Base              1.9.0.52 AMXX Dev Team     admin.amxx       running
  *   [ 11] CSDM Main               2.1.3d   BAILOPAN          csdm_main.amxx   bad load
  *
+ * AMXX 1.10 adds an id column after the bracketed number and a url column
+ * between author and file:
+ *   [  4] 3   FreshBans           1.4.8b   kanagava  unknown  fresh_bans.  running
+ *
  * Anchored on the known trailing status; name/author may contain spaces.
  */
 const AMXX_PLUGINS_LINE =
-    /^\s*\[\s*\d+\]\s+(?<name>.+?)\s+(?<version>v?\d\S*)\s+(?<author>.+?)\s+(?<file>\S+)\s+(?<status>running|debug|stopped|paused|bad load|error)\s*$/;
+    /^\s*\[\s*\d+\]\s+(?:\d+\s+)?(?<name>.+?)\s+(?<version>v?\d\S*)\s+(?<author>.+?)\s+(?<file>\S+)\s+(?<status>running|debug|stopped|paused|bad load|error)\s*$/;
 
 export function parseAmxxPlugins(output: string): RuntimePluginInfo[] {
     const result: RuntimePluginInfo[] = [];
@@ -85,7 +89,7 @@ export function parseAmxxPlugins(output: string): RuntimePluginInfo[] {
             file,
             name: name.trim(),
             version: normalizeVersion(version),
-            author: author.trim(),
+            author: splitAuthorFromUrl(author),
             status: normalizeAmxxStatus(status),
             rawStatus: status,
         });
@@ -105,9 +109,34 @@ export function matchesListedFile(listed: string, actual: string): boolean {
     return bare.length >= 8 && actual.startsWith(bare);
 }
 
+/**
+ * `status` output:
+ *   map     : de_dust2 at: 0 x, 0 y, 0 z
+ */
+export function parseStatusMap(output: string): string | null {
+    const match = /^map\s+:\s*(\S+)/im.exec(output);
+    return match ? match[1] : null;
+}
+
 function normalizeVersion(raw: string): string | null {
     const cleaned = raw.replace(/^v/i, '').trim();
     return /^[0-9]/.test(cleaned) ? cleaned : null;
+}
+
+/**
+ * The author capture spans everything between version and file, which in the
+ * AMXX 1.10 layout includes the url column. Split it on runs of 2+ spaces and
+ * drop the trailing chunk when it looks like a url, keeping the rest as the
+ * author (a version suffix spilling into the author, e.g. `2.3 Dev`, is
+ * preserved). A lone chunk is always kept — the classic layout has no url.
+ */
+function splitAuthorFromUrl(middle: string): string {
+    const chunks = middle.trim().split(/\s{2,}/);
+    const last = chunks[chunks.length - 1].toLowerCase();
+    if (chunks.length > 1 && (last === 'unknown' || last.startsWith('http'))) {
+        chunks.pop();
+    }
+    return chunks.join(' ');
 }
 
 function normalizeMetaStatus(stat: string): RuntimePluginInfo['status'] {
@@ -126,8 +155,11 @@ function normalizeAmxxStatus(status: string): RuntimePluginInfo['status'] {
     if (lowered === 'running' || lowered === 'debug') {
         return 'running';
     }
-    if (lowered === 'paused' || lowered === 'stopped') {
+    if (lowered === 'paused') {
         return 'paused';
+    }
+    if (lowered === 'stopped') {
+        return 'stopped';
     }
     return 'error'; // bad load, error
 }

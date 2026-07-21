@@ -27,7 +27,7 @@
                     class="mb-3"
                     :title="trans('restart_required_title')"
                     closable
-                    @close="restartDismissed = true"
+                    @close="dismissRestartBanner"
                 >
                     <div class="flex flex-wrap items-center gap-3">
                         <span class="flex-1 min-w-[240px]">{{ trans('restart_required_text') }}</span>
@@ -147,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { NAlert, NCard, NEmpty, NTabPane, NTabs } from 'naive-ui';
 import { providePluginTrans } from '@gameap/plugin-sdk';
 
@@ -164,13 +164,14 @@ import {
     parseAmxxVersion,
     parseMetaList,
     parseMetaVersion,
+    parseStatusMap,
 } from '../lib/rcon-parse';
 import { prettyName, fileStem } from '../lib/naming';
+import { computeRowStatus, isPendingRow } from '../lib/status';
 import type {
     PlatformKind,
     PlatformVersion,
     PluginRow,
-    RowStatus,
     RuntimePluginInfo,
     ServerTabProps,
     StateResponse,
@@ -195,6 +196,109 @@ const activeList = ref<PlatformKind>('amxx');
 const restartRequired = ref(false);
 const restartDismissed = ref(false);
 const restarting = ref(false);
+const currentMap = ref<string | null>(null);
+
+// Record of panel-made changes that are not applied until a restart/map change.
+interface PendingRestart {
+    /** Map at the moment of the first unapplied change (null without RCON). */
+    map: string | null;
+    /** True when the change is invisible to the ini↔runtime diff (compile, replace, debug). */
+    hard: boolean;
+    dismissed: boolean;
+}
+
+const pendingRestartKey = computed(() => `goldsrc-addons:restart:${props.serverId}`);
+
+function readPendingRestart(): PendingRestart | null {
+    try {
+        const raw = window.localStorage.getItem(pendingRestartKey.value);
+        return raw ? (JSON.parse(raw) as PendingRestart) : null;
+    } catch {
+        return null;
+    }
+}
+
+function writePendingRestart(record: PendingRestart): void {
+    try {
+        window.localStorage.setItem(pendingRestartKey.value, JSON.stringify(record));
+    } catch {
+        // localStorage may be unavailable — the banner then lives for the session only.
+    }
+}
+
+function clearPendingRestart(): void {
+    try {
+        window.localStorage.removeItem(pendingRestartKey.value);
+    } catch {
+        // Same as above.
+    }
+}
+
+function markRestartRequired(hard: boolean): void {
+    const existing = readPendingRestart();
+    writePendingRestart({
+        map: existing?.map ?? currentMap.value,
+        hard: (existing?.hard ?? false) || hard,
+        dismissed: false,
+    });
+    restartRequired.value = true;
+    restartDismissed.value = false;
+}
+
+function dismissRestartBanner(): void {
+    restartDismissed.value = true;
+    const record = readPendingRestart();
+    if (record) {
+        writePendingRestart({ ...record, dismissed: true });
+    }
+}
+
+function resetRestartRequired(): void {
+    restartRequired.value = false;
+    restartDismissed.value = false;
+    clearPendingRestart();
+}
+
+/**
+ * Auto-reset checks: the change applied once the map changed (rule 2), or —
+ * for ini-visible changes — once the runtime agrees with the ini again
+ * (rule 3, guarded by rconOk so a dead console never hides the banner).
+ */
+function checkRestartApplied(): void {
+    if (!restartRequired.value) {
+        return;
+    }
+    const record = readPendingRestart();
+    if (!record) {
+        resetRestartRequired();
+        return;
+    }
+    if (record.map && currentMap.value && record.map !== currentMap.value) {
+        resetRestartRequired();
+        return;
+    }
+    if (!record.hard && rconOk.value && !hasPendingRows.value) {
+        resetRestartRequired();
+    }
+}
+
+let restartPollTimer: number | null = null;
+
+function startRestartPolling(): void {
+    if (restartPollTimer !== null) {
+        return;
+    }
+    restartPollTimer = window.setInterval(() => {
+        void refreshRcon().then(() => checkRestartApplied());
+    }, 30000);
+}
+
+function stopRestartPolling(): void {
+    if (restartPollTimer !== null) {
+        window.clearInterval(restartPollTimer);
+        restartPollTimer = null;
+    }
+}
 
 const installOpen = ref(false);
 const installPlatform = ref<PlatformKind>('amxx');
@@ -262,26 +366,12 @@ function buildRow(
     runtimeList: RuntimePluginInfo[],
 ): Omit<PluginRow, 'debug' | 'comment' | 'groupIndex' | 'groupTitle' | 'hasSource' | 'sourcePath'> {
     const runtime = runtimeList.find((item) => matchesListedFile(item.file, file)) ?? null;
-
-    let status: RowStatus;
-    let statusDetail: string | null = null;
-    if (missing) {
-        status = 'missing';
-    } else if (runtime && runtime.status === 'error') {
-        status = 'error';
-        statusDetail = runtime.rawStatus;
-    } else if (rconOk.value) {
-        const loaded = runtime !== null && runtime.status !== 'paused';
-        if (enabled && loaded) {
-            status = 'running';
-        } else if (enabled !== loaded) {
-            status = 'pending';
-        } else {
-            status = 'stopped';
-        }
-    } else {
-        status = enabled ? 'enabled' : 'stopped';
-    }
+    const { status, detail } = computeRowStatus({
+        enabled,
+        missing,
+        runtime,
+        rconOk: rconOk.value,
+    });
 
     return {
         key: `${kind}:${file}`,
@@ -297,7 +387,7 @@ function buildRow(
         hasConfig,
         configPath,
         status,
-        statusDetail,
+        statusDetail: detail,
     };
 }
 
@@ -356,12 +446,10 @@ const metamodRows = computed<PluginRow[]>(() => {
 });
 
 const hasPendingRows = computed(() =>
-    [...amxxRows.value, ...metamodRows.value].some((row) => row.status === 'pending'),
+    [...amxxRows.value, ...metamodRows.value].some((row) => isPendingRow(row.status)),
 );
 
-const showRestartBanner = computed(
-    () => (restartRequired.value || hasPendingRows.value) && !restartDismissed.value,
-);
+const showRestartBanner = computed(() => restartRequired.value && !restartDismissed.value);
 
 async function refreshState(): Promise<void> {
     loading.value = true;
@@ -382,19 +470,22 @@ async function refreshRcon(): Promise<void> {
         amxxVersion.value = null;
         metaRuntime.value = [];
         amxxRuntime.value = [];
+        currentMap.value = null;
         return;
     }
     try {
-        const [metaVersionOut, amxxVersionOut, metaListOut, amxxPluginsOut] = [
+        const [metaVersionOut, amxxVersionOut, metaListOut, amxxPluginsOut, statusOut] = [
             await rcon(props.serverId, 'meta version'),
             await rcon(props.serverId, 'amxx version'),
             await rcon(props.serverId, 'meta list'),
             await rcon(props.serverId, 'amxx plugins'),
+            await rcon(props.serverId, 'status'),
         ];
         metaVersion.value = parseMetaVersion(metaVersionOut);
         amxxVersion.value = parseAmxxVersion(amxxVersionOut);
         metaRuntime.value = parseMetaList(metaListOut);
         amxxRuntime.value = parseAmxxPlugins(amxxPluginsOut);
+        currentMap.value = parseStatusMap(statusOut);
         rconAvailability.value = 'ok';
     } catch (error) {
         rconAvailability.value = error instanceof RconError ? error.reason : 'error';
@@ -402,6 +493,7 @@ async function refreshRcon(): Promise<void> {
         amxxVersion.value = null;
         metaRuntime.value = [];
         amxxRuntime.value = [];
+        currentMap.value = null;
     }
 }
 
@@ -417,8 +509,7 @@ async function onToggle(kind: PlatformKind, row: PluginRow, value: boolean): Pro
     mutating.value = true;
     try {
         await togglePlugin(props.pluginId, props.serverId, kind, row.file, value);
-        restartRequired.value = true;
-        restartDismissed.value = false;
+        markRestartRequired(false);
         toast('success', trans(value ? 'toggled_on' : 'toggled_off', { name: row.name }));
         await refreshState();
     } catch (error) {
@@ -432,8 +523,7 @@ async function onSetDebug(kind: PlatformKind, row: PluginRow, value: boolean): P
     mutating.value = true;
     try {
         await setAttributes(props.pluginId, props.serverId, kind, row.file, value, row.comment);
-        restartRequired.value = true;
-        restartDismissed.value = false;
+        markRestartRequired(true);
         toast('success', trans(value ? 'debug_on' : 'debug_off', { name: row.name }));
         await refreshState();
     } catch (error) {
@@ -472,8 +562,7 @@ function onDelete(kind: PlatformKind, row: PluginRow): void {
             mutating.value = true;
             try {
                 await deletePlugin(props.pluginId, props.serverId, kind, row.file);
-                restartRequired.value = true;
-                restartDismissed.value = false;
+                markRestartRequired(false);
                 toast('success', trans('deleted', { name: row.name }));
                 await refreshState();
             } catch (error) {
@@ -497,8 +586,7 @@ async function applyBulkToggle(kind: PlatformKind, rows: PluginRow[], value: boo
             changed += 1;
         }
         if (changed > 0) {
-            restartRequired.value = true;
-            restartDismissed.value = false;
+            markRestartRequired(false);
             toast('success', trans(value ? 'bulk_enabled' : 'bulk_disabled', { count: changed }));
             await refreshState();
         }
@@ -537,8 +625,7 @@ function onBulk(kind: PlatformKind, action: 'enable' | 'disable' | 'delete', row
             } catch (error) {
                 toast('error', apiErrorMessage(error, trans('op_failed')));
             } finally {
-                restartRequired.value = true;
-                restartDismissed.value = false;
+                markRestartRequired(false);
                 await refreshState();
                 mutating.value = false;
             }
@@ -551,9 +638,9 @@ function openInstall(kind: PlatformKind): void {
     installOpen.value = true;
 }
 
-async function onInstalled(): Promise<void> {
-    restartRequired.value = true;
-    restartDismissed.value = false;
+async function onInstalled(replaced: boolean): Promise<void> {
+    // A replaced .amxx is invisible to the ini↔runtime diff — a hard change.
+    markRestartRequired(replaced);
     await refreshState();
 }
 
@@ -569,8 +656,7 @@ function openSource(row: PluginRow): void {
 
 async function onCompiled(): Promise<void> {
     // The .amxx on disk changed — a restart/map change loads the new build.
-    restartRequired.value = true;
-    restartDismissed.value = false;
+    markRestartRequired(true);
     await refreshState();
 }
 
@@ -583,8 +669,7 @@ async function restartNow(): Promise<void> {
     try {
         await restartServer(props.serverId);
         toast('success', trans('restart_done'));
-        restartRequired.value = false;
-        restartDismissed.value = false;
+        resetRestartRequired();
         window.setTimeout(() => {
             void refreshAll();
         }, 10000);
@@ -599,13 +684,36 @@ async function restartNow(): Promise<void> {
 // re-query the console once the server turns out to be online.
 watch(serverOnline, (online, wasOnline) => {
     if (online && !wasOnline) {
+        // A process restart applies every pending change (rule 1).
+        if (restartRequired.value) {
+            resetRestartRequired();
+        }
         void refreshRcon();
     }
 });
 
-onMounted(() => {
-    if (isGoldSource.value) {
-        void refreshAll();
+// While a restart is pending, poll the console so the banner can clear itself.
+watch(restartRequired, (required) => {
+    if (required) {
+        startRestartPolling();
+    } else {
+        stopRestartPolling();
     }
+});
+
+onMounted(() => {
+    const record = readPendingRestart();
+    if (record) {
+        restartRequired.value = true;
+        restartDismissed.value = record.dismissed;
+    }
+    if (isGoldSource.value) {
+        // The restart may have happened while the page was closed — check right away.
+        void refreshAll().then(() => checkRestartApplied());
+    }
+});
+
+onUnmounted(() => {
+    stopRestartPolling();
 });
 </script>

@@ -76,7 +76,7 @@ export interface RuntimePluginInfo {
     version: string | null;
     author: string | null;
     /** Normalized runtime state. */
-    status: 'running' | 'paused' | 'error';
+    status: 'running' | 'paused' | 'stopped' | 'error';
     rawStatus: string;
 }
 
@@ -114,6 +114,7 @@ export interface PluginRow {
 export type RowStatus =
     | 'running'
     | 'enabled'
+    | 'paused'
     | 'stopped'
     | 'pending'
     | 'error'
