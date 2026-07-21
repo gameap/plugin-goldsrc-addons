@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    isBadPasswordOutput,
     matchesListedFile,
     parseAmxxPlugins,
     parseAmxxVersion,
@@ -184,5 +185,27 @@ describe('parseStatusMap', () => {
     it('returns null on garbage', () => {
         expect(parseStatusMap('unknown command: status')).toBeNull();
         expect(parseStatusMap('')).toBeNull();
+    });
+});
+
+describe('isBadPasswordOutput', () => {
+    it('matches the wrong-password answer in any case', () => {
+        expect(isBadPasswordOutput('Bad Password')).toBe(true);
+        expect(isBadPasswordOutput('bad rcon password')).toBe(true);
+        expect(isBadPasswordOutput('BAD PASSWORD')).toBe(true);
+        expect(isBadPasswordOutput('Bad Rcon Password')).toBe(true);
+    });
+
+    it('matches despite surrounding whitespace and newlines', () => {
+        expect(isBadPasswordOutput('  Bad Password\n')).toBe(true);
+        expect(isBadPasswordOutput('\nBad Password  \n')).toBe(true);
+    });
+
+    it('does not match regular command output', () => {
+        const pluginsRow =
+            '[  1] Admin Base              1.9.0.52 AMXX Dev Team     admin.amxx       running';
+        expect(isBadPasswordOutput(pluginsRow)).toBe(false);
+        expect(isBadPasswordOutput('unknown command: amxx')).toBe(false);
+        expect(isBadPasswordOutput('')).toBe(false);
     });
 });

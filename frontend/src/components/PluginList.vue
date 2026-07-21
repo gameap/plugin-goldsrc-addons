@@ -112,6 +112,7 @@ import {
 } from 'naive-ui';
 import { usePluginTrans } from '@gameap/plugin-sdk';
 
+import { pauseActionForStatus } from '../lib/status';
 import type { PlatformKind, PluginRow, RowStatus } from '../types';
 
 const props = defineProps<{
@@ -124,6 +125,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     toggle: [kind: PlatformKind, row: PluginRow, value: boolean];
+    pause: [kind: PlatformKind, row: PluginRow, paused: boolean];
     'set-debug': [kind: PlatformKind, row: PluginRow, value: boolean];
     'set-comment': [kind: PlatformKind, row: PluginRow, text: string];
     remove: [kind: PlatformKind, row: PluginRow];
@@ -585,6 +587,23 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
                     return null;
                 }
                 const buttons = [];
+                const pauseAction =
+                    props.kind === 'amxx' && !row.system
+                        ? pauseActionForStatus(row.status)
+                        : null;
+                if (pauseAction === 'pause') {
+                    buttons.push(
+                        renderActionButton('white', 'fa-solid fa-pause', trans('action_pause'), () =>
+                            emit('pause', props.kind, row, true),
+                        ),
+                    );
+                } else if (pauseAction === 'unpause') {
+                    buttons.push(
+                        renderActionButton('white', 'fa-solid fa-play', trans('action_unpause'), () =>
+                            emit('pause', props.kind, row, false),
+                        ),
+                    );
+                }
                 if (row.hasSource) {
                     buttons.push(
                         renderActionButton('white', 'fa-solid fa-code', trans('action_source'), () =>

@@ -118,6 +118,11 @@ export function parseStatusMap(output: string): string | null {
     return match ? match[1] : null;
 }
 
+/** HLDS answers "Bad Password" to a wrong-password rcon command. */
+export function isBadPasswordOutput(output: string): boolean {
+    return /bad\s*(rcon\s*)?password/i.test(output);
+}
+
 function normalizeVersion(raw: string): string | null {
     const cleaned = raw.replace(/^v/i, '').trim();
     return /^[0-9]/.test(cleaned) ? cleaned : null;

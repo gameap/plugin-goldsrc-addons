@@ -37,6 +37,10 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
             rcon_unavailable_norcon:
                 'RCON is not configured — console versions and statuses are unavailable.',
             rcon_unavailable_error: 'Failed to query the server console.',
+            rcon_unavailable_badpass:
+                'Wrong RCON password — console versions and statuses are unavailable. Check the password in the server settings.',
+            rcon_unavailable_empty:
+                'The server console returned an empty response — versions and statuses are unavailable.',
 
             restart_required_title: 'Server restart required',
             restart_required_text:
@@ -76,6 +80,8 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
             action_config: 'Config',
             action_source: 'Source',
             action_delete: 'Delete',
+            action_pause: 'Pause',
+            action_unpause: 'Resume',
             col_debug: 'Debug',
             debug_hint: 'AMX Mod X debug mode for this plugin',
             debug_on: 'Debug enabled for ":name" — applies after restart',
@@ -117,6 +123,10 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
 
             toggled_on: 'Plugin ":name" enabled — applies after restart',
             toggled_off: 'Plugin ":name" disabled — applies after restart',
+            paused_ok: 'Plugin ":name" paused',
+            unpaused_ok: 'Plugin ":name" resumed',
+            pause_failed: 'Failed to pause ":name"',
+            unpause_failed: 'Failed to resume ":name"',
             deleted: 'Plugin ":name" deleted',
             bulk_enabled: 'Plugins enabled: :count',
             bulk_disabled: 'Plugins disabled: :count',
@@ -181,6 +191,10 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
             rcon_unavailable_norcon:
                 'RCON не настроен — версии и статусы из консоли недоступны.',
             rcon_unavailable_error: 'Не удалось опросить консоль сервера.',
+            rcon_unavailable_badpass:
+                'Неверный RCON-пароль — версии и статусы из консоли недоступны. Проверьте пароль в настройках сервера.',
+            rcon_unavailable_empty:
+                'Консоль сервера вернула пустой ответ — версии и статусы недоступны.',
 
             restart_required_title: 'Требуется перезапуск сервера',
             restart_required_text:
@@ -220,6 +234,8 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
             action_config: 'Конфиг',
             action_source: 'Исходник',
             action_delete: 'Удалить',
+            action_pause: 'Пауза',
+            action_unpause: 'Продолжить',
             col_debug: 'Debug',
             debug_hint: 'Режим отладки AMX Mod X для этого плагина',
             debug_on: 'Debug включён для «:name» — применится после перезапуска',
@@ -261,6 +277,10 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
 
             toggled_on: 'Плагин «:name» включён — применится после перезапуска',
             toggled_off: 'Плагин «:name» выключен — применится после перезапуска',
+            paused_ok: 'Плагин «:name» поставлен на паузу',
+            unpaused_ok: 'Плагин «:name» снят с паузы',
+            pause_failed: 'Не удалось поставить «:name» на паузу',
+            unpause_failed: 'Не удалось снять «:name» с паузы',
             deleted: 'Плагин «:name» удалён',
             bulk_enabled: 'Включено плагинов: :count',
             bulk_disabled: 'Выключено плагинов: :count',

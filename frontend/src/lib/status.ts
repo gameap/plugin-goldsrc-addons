@@ -56,3 +56,10 @@ export function computeRowStatus({ enabled, missing, runtime, rconOk }: RowStatu
 export function isPendingRow(status: RowStatus): boolean {
     return status === 'pending';
 }
+
+/** Pause/unpause is a runtime action, available only against live console state. */
+export function pauseActionForStatus(status: RowStatus): 'pause' | 'unpause' | null {
+    if (status === 'running') return 'pause';
+    if (status === 'paused') return 'unpause';
+    return null;
+}

@@ -4,7 +4,9 @@
 
 import axios from 'axios';
 
-export type RconFailure = 'offline' | 'no-rcon' | 'error';
+import { isBadPasswordOutput } from '../lib/rcon-parse';
+
+export type RconFailure = 'offline' | 'no-rcon' | 'bad-password' | 'empty' | 'error';
 
 export class RconError extends Error {
     reason: RconFailure;
@@ -16,22 +18,44 @@ export class RconError extends Error {
 }
 
 /** POST /api/servers/{id}/rcon — synchronous command output. */
-export async function rcon(serverId: number, command: string): Promise<string> {
+export async function rcon(
+    serverId: number,
+    command: string,
+    options?: { allowEmpty?: boolean },
+): Promise<string> {
     try {
         const response = await axios.post(`/api/servers/${serverId}/rcon`, { command });
-        return String(response.data?.output ?? '');
+        const output = String(response.data?.output ?? '');
+        if (isBadPasswordOutput(output)) {
+            throw new RconError('bad-password', 'wrong rcon password');
+        }
+        if (output.trim() === '' && !options?.allowEmpty) {
+            throw new RconError('empty', 'empty rcon output');
+        }
+        return output;
     } catch (error) {
         throw toRconError(error);
     }
 }
 
+/** `amxx pause` / `amxx unpause` — empty output is the normal success case. */
+export async function amxxSetPaused(serverId: number, file: string, paused: boolean): Promise<string> {
+    return rcon(serverId, `amxx ${paused ? 'pause' : 'unpause'} "${file}"`, { allowEmpty: true });
+}
+
 function toRconError(error: unknown): RconError {
+    if (error instanceof RconError) {
+        return error;
+    }
     const status = axios.isAxiosError(error) ? error.response?.status : undefined;
     if (status === 503) {
         return new RconError('offline', 'server is offline');
     }
     if (status === 412) {
         return new RconError('no-rcon', 'rcon password is not configured');
+    }
+    if (status === 422) {
+        return new RconError('bad-password', 'rcon authentication failed');
     }
     return new RconError('error', axios.isAxiosError(error) ? error.message : String(error));
 }

@@ -108,6 +108,7 @@
                             :ini-path="activeList === 'amxx' ? state.paths.amxx_plugins_ini : state.paths.metamod_plugins_ini"
                             :busy="mutating"
                             @toggle="onToggle"
+                            @pause="onPause"
                             @set-debug="onSetDebug"
                             @set-comment="onSetComment"
                             @remove="onDelete"
@@ -156,7 +157,7 @@ import InstallModal from './InstallModal.vue';
 import PlatformCard from './PlatformCard.vue';
 import PluginList from './PluginList.vue';
 import SourceModal from './SourceModal.vue';
-import { RconError, rcon, restartServer } from '../api/gameap';
+import { RconError, amxxSetPaused, rcon, restartServer } from '../api/gameap';
 import { apiErrorMessage, deletePlugin, getState, setAttributes, togglePlugin } from '../api/plugin';
 import {
     matchesListedFile,
@@ -185,7 +186,14 @@ const loading = ref(false);
 const loadError = ref<string | null>(null);
 const mutating = ref(false);
 
-type RconAvailability = 'unknown' | 'ok' | 'offline' | 'no-rcon' | 'error';
+type RconAvailability =
+    | 'unknown'
+    | 'ok'
+    | 'offline'
+    | 'no-rcon'
+    | 'bad-password'
+    | 'empty'
+    | 'error';
 const rconAvailability = ref<RconAvailability>('unknown');
 const metaVersion = ref<PlatformVersion | null>(null);
 const amxxVersion = ref<PlatformVersion | null>(null);
@@ -344,6 +352,10 @@ const rconHint = computed(() => {
             return trans('rcon_unavailable_offline');
         case 'no-rcon':
             return trans('rcon_unavailable_norcon');
+        case 'bad-password':
+            return trans('rcon_unavailable_badpass');
+        case 'empty':
+            return trans('rcon_unavailable_empty');
         case 'error':
             return trans('rcon_unavailable_error');
         default:
@@ -488,13 +500,18 @@ async function refreshRcon(): Promise<void> {
         currentMap.value = parseStatusMap(statusOut);
         rconAvailability.value = 'ok';
     } catch (error) {
-        rconAvailability.value = error instanceof RconError ? error.reason : 'error';
-        metaVersion.value = null;
-        amxxVersion.value = null;
-        metaRuntime.value = [];
-        amxxRuntime.value = [];
-        currentMap.value = null;
+        applyRconFailure(error);
     }
+}
+
+/** Mark the console unavailable after a failed RCON call and drop runtime data. */
+function applyRconFailure(error: unknown): void {
+    rconAvailability.value = error instanceof RconError ? error.reason : 'error';
+    metaVersion.value = null;
+    amxxVersion.value = null;
+    metaRuntime.value = [];
+    amxxRuntime.value = [];
+    currentMap.value = null;
 }
 
 async function refreshAll(): Promise<void> {
@@ -514,6 +531,36 @@ async function onToggle(kind: PlatformKind, row: PluginRow, value: boolean): Pro
         await refreshState();
     } catch (error) {
         toast('error', apiErrorMessage(error, trans('op_failed')));
+    } finally {
+        mutating.value = false;
+    }
+}
+
+async function onPause(kind: PlatformKind, row: PluginRow, paused: boolean): Promise<void> {
+    mutating.value = true;
+    try {
+        const output = await amxxSetPaused(props.serverId, row.file, paused);
+        amxxRuntime.value = parseAmxxPlugins(await rcon(props.serverId, 'amxx plugins'));
+        rconAvailability.value = 'ok';
+        const runtime =
+            amxxRuntime.value.find((item) => matchesListedFile(item.file, row.file)) ?? null;
+        const expected = paused ? 'paused' : 'running';
+        if (runtime?.status === expected) {
+            toast('success', trans(paused ? 'paused_ok' : 'unpaused_ok', { name: row.name }));
+        } else {
+            toast(
+                'error',
+                output || trans(paused ? 'pause_failed' : 'unpause_failed', { name: row.name }),
+            );
+        }
+    } catch (error) {
+        applyRconFailure(error);
+        toast(
+            'error',
+            error instanceof RconError && error.reason === 'bad-password'
+                ? trans('rcon_unavailable_badpass')
+                : apiErrorMessage(error, trans('op_failed')),
+        );
     } finally {
         mutating.value = false;
     }

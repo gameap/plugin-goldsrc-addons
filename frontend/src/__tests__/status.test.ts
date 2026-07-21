@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeRowStatus, isPendingRow } from '../lib/status';
+import { computeRowStatus, isPendingRow, pauseActionForStatus } from '../lib/status';
 import type { RowStatus, RuntimePluginInfo } from '../types';
 
 function runtime(status: RuntimePluginInfo['status'], rawStatus: string = status): RuntimePluginInfo {
@@ -83,6 +83,23 @@ describe('isPendingRow', () => {
         const statuses: RowStatus[] = ['running', 'enabled', 'stopped', 'paused', 'pending', 'error', 'missing'];
         for (const status of statuses) {
             expect(isPendingRow(status)).toBe(status === 'pending');
+        }
+    });
+});
+
+describe('pauseActionForStatus', () => {
+    it('offers pause for a running plugin', () => {
+        expect(pauseActionForStatus('running')).toBe('pause');
+    });
+
+    it('offers unpause for a paused plugin', () => {
+        expect(pauseActionForStatus('paused')).toBe('unpause');
+    });
+
+    it('offers no action for the other statuses', () => {
+        const statuses: RowStatus[] = ['enabled', 'stopped', 'pending', 'error', 'missing'];
+        for (const status of statuses) {
+            expect(pauseActionForStatus(status)).toBeNull();
         }
     });
 });

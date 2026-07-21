@@ -29,6 +29,10 @@ and config editing.
   edited; the `debug` load flag of AMX Mod X plugins is shown and can be toggled.
 - Enable/disable — commenting the line in `plugins.ini`, byte-preserving the
   rest of the file (CRLF, BOM, CP1251 comments).
+- Pause/unpause of an AMXX plugin from the list — the `amxx pause <file>` /
+  `amxx unpause <file>` console commands via RCON, applied instantly, without
+  a restart; the button is available when the server is online and RCON is
+  working.
 - Install from file: `.amxx` for AMX Mod X, `.so`/`.dll` for Metamod (the file
   is uploaded through the file manager and then registered in the ini). `.sma`
   is rejected with a hint to compile it first. Re-uploading an already installed
@@ -99,3 +103,6 @@ Plugin API: `/api/plugins/ezvdsxmlu6fbk/...`
 - Console versions and statuses are available only when the server is running
   and an RCON password is set; without them, statuses are shown based on
   `plugins.ini`.
+- Console diagnostics: a wrong RCON password (a "Bad Password" reply from
+  GoldSource / HTTP 422 from the panel) and an unexpectedly empty console
+  response are reported as a separate hint instead of silent empty statuses.
