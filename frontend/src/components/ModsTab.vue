@@ -1,5 +1,5 @@
 <template>
-    <div class="mt-2">
+    <div>
         <!-- Fallback guard: the tab itself is game-gated via checkGame -->
         <n-card v-if="!isGoldSource" size="small">
             <div class="py-10">
@@ -20,13 +20,15 @@
             </n-card>
 
             <template v-else-if="state">
-                <!-- rcon hint -->
+                <!-- rcon hint: always rendered to reserve its height — removing it
+                     from the layout shifts the content below (visibility keeps the
+                     box; nbsp keeps the text line height when there is no hint) -->
                 <div
-                    v-if="rconHint"
-                    class="mb-3 flex items-center gap-2 text-xs text-stone-400 dark:text-stone-500"
+                    class="mb-1 flex items-center gap-2 text-xs text-stone-400 dark:text-stone-500"
+                    :style="{ visibility: rconHint ? 'visible' : 'hidden' }"
                 >
                     <GIcon name="info" size="sm" />
-                    <span>{{ rconHint }}</span>
+                    <span>{{ rconHint || ' ' }}</span>
                 </div>
 
                 <!-- platform cards double as tab triggers -->

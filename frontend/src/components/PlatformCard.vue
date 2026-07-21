@@ -164,7 +164,7 @@ const errorCount = computed(
     }
 
     .platform-card.platform-card--inactive:hover {
-        background-color: #ffffff;
+        background-color: #fafaf9;
         box-shadow: none;
     }
 }
@@ -177,10 +177,6 @@ const errorCount = computed(
     box-shadow: inset 0 0 0 2px #d6d3d1;
 }
 
-.dark .platform-card.platform-card--inactive:hover {
-    box-shadow: inset 0 0 0 1px #57534e;
-}
-
 @media (min-width: 768px) {
     .dark .platform-card.platform-card--active {
         box-shadow: none;
@@ -191,7 +187,7 @@ const errorCount = computed(
     }
 
     .dark .platform-card.platform-card--inactive:hover {
-        background-color: rgba(12, 10, 9, 0.1);
+        background-color: rgba(12, 10, 9, 0.4);
     }
 }
 </style>

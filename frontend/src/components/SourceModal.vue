@@ -2,7 +2,7 @@
     <GModal
         :show="show"
         :title="title"
-        :style="{ width: '760px' }"
+        :style="{ width: '1000px' }"
         transform-origin="center"
         @update:show="(value: boolean) => $emit('update:show', value)"
     >
@@ -14,14 +14,36 @@
         </div>
 
         <Loading v-if="loading" />
-        <textarea
+        <div
             v-else
-            ref="editor"
-            v-model="text"
-            rows="18"
-            spellcheck="false"
-            class="w-full text-xs font-mono px-2 py-1.5 rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-200 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-        ></textarea>
+            class="pwn-editor relative overflow-hidden rounded-md"
+            :style="{ height: editorHeight + 'px' }"
+        >
+            <div
+                ref="gutterEl"
+                class="pwn-gutter absolute left-0 top-0 bottom-0 overflow-hidden select-none text-right"
+                :style="gutterStyle"
+                aria-hidden="true"
+            >
+                <div v-for="n in lineCount" :key="n">{{ n }}</div>
+            </div>
+            <pre
+                ref="highlightEl"
+                class="pwn-pre absolute inset-0 m-0 overflow-hidden pointer-events-none"
+                :style="codeStyle"
+                aria-hidden="true"
+                v-html="highlighted"
+            ></pre>
+            <textarea
+                ref="editor"
+                v-model="text"
+                spellcheck="false"
+                wrap="off"
+                class="pwn-textarea absolute inset-0 rounded focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                :style="[codeStyle, textareaStyle]"
+                @scroll="syncScroll"
+            ></textarea>
+        </div>
 
         <!-- compile status: the alert always stays in the DOM (hidden while
              idle) so its exact height is reserved and the editor doesn't jump.
@@ -86,6 +108,7 @@ import { usePluginTrans } from '@gameap/plugin-sdk';
 import { fmDownloadText, fmUploadFile } from '../api/gameap';
 import { apiErrorMessage, compileSource } from '../api/plugin';
 import { lineOffset } from '../lib/source';
+import { ensurePawnEditorStyles, highlightPawn } from '../lib/pawn';
 import type { CompileResponse, PluginRow } from '../types';
 
 const props = defineProps<{
@@ -108,6 +131,78 @@ const saving = ref(false);
 const compiling = ref(false);
 const result = ref<CompileResponse | null>(null);
 const editor = ref<HTMLTextAreaElement | null>(null);
+const highlightEl = ref<HTMLElement | null>(null);
+const gutterEl = ref<HTMLElement | null>(null);
+
+ensurePawnEditorStyles();
+
+// Shared geometry for the highlight <pre> and the transparent <textarea>
+// overlay: any drift between the two breaks the illusion of a highlighted
+// editor, so font metrics and padding come from one place. Font matches the
+// panel's file-manager text editor.
+const EDITOR_FONT = "'Consolas', 'Monaco', 'Courier New', monospace";
+
+// Same sizing as the panel's file-manager text editor (TextEditModal),
+// minus two lines (2 × 21px) so compiler diagnostics below the editor fit.
+const editorHeight = Math.min(window.innerHeight - 300, 500) - 42;
+
+const lineCount = computed(() => text.value.split('\n').length);
+const gutterDigits = computed(() => Math.max(2, String(lineCount.value).length));
+// Gutter column width: number width + side padding, min 50px like the
+// file-manager editor. The code layers start their text 10px to its right.
+const gutterWidth = computed(() => `max(50px, calc(${gutterDigits.value}ch + 20px))`);
+
+const gutterStyle = computed(() => ({
+    // Opaque and above the code layers: scrolled <pre> content bleeds into
+    // its left padding area and would otherwise paint over the numbers.
+    zIndex: 10,
+    width: gutterWidth.value,
+    padding: '10px 12px 0 8px',
+    fontFamily: EDITOR_FONT,
+    fontSize: '14px',
+    lineHeight: '21px',
+}));
+
+const codeStyle = computed(() => ({
+    margin: '0',
+    padding: `10px 10px 10px calc(${gutterWidth.value} + 10px)`,
+    fontFamily: EDITOR_FONT,
+    fontSize: '14px',
+    lineHeight: '21px',
+    tabSize: '4',
+    whiteSpace: 'pre',
+}));
+
+// The textarea carries the real text but renders it invisible; only the
+// caret is shown (caret-color comes from the injected editor styles).
+// overscroll-behavior: the macOS rubber-band bounce is the textarea's own
+// rendering (caret/selection) and cannot be mirrored to the highlight
+// layer via scrollTop, so it is disabled to keep the layers glued together.
+const textareaStyle = {
+    color: 'transparent',
+    background: 'transparent',
+    border: 'none',
+    resize: 'none',
+    overscrollBehavior: 'none',
+};
+
+// Trailing '\n': a final empty line must still occupy height in the <pre>,
+// otherwise the last line of the textarea has no counterpart.
+const highlighted = computed(() => highlightPawn(text.value + '\n'));
+
+function syncScroll(): void {
+    const ta = editor.value;
+    if (!ta) {
+        return;
+    }
+    if (highlightEl.value) {
+        highlightEl.value.scrollTop = ta.scrollTop;
+        highlightEl.value.scrollLeft = ta.scrollLeft;
+    }
+    if (gutterEl.value) {
+        gutterEl.value.scrollTop = ta.scrollTop;
+    }
+}
 
 const statusIdle = computed(() => !compiling.value && result.value === null);
 const statusType = computed(() => {
