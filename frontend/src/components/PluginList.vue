@@ -26,7 +26,7 @@
                         :placeholder="trans('search_placeholder')"
                         size="small"
                         clearable
-                        class="w-56 sm:w-64"
+                        class="w-72 sm:w-80"
                     >
                         <template #prefix>
                             <GIcon name="search" size="sm" class="text-stone-400" />
@@ -226,8 +226,8 @@ const emptyText = computed(() =>
     search.value || filter.value !== 'all' ? trans('empty_no_results') : trans('empty_no_plugins'),
 );
 
-const columnCount = computed(() => (props.kind === 'amxx' ? 7 : 6));
-const scrollX = computed(() => (props.kind === 'amxx' ? 980 : 920));
+const columnCount = computed(() => (props.kind === 'amxx' ? 6 : 5));
+const scrollX = computed(() => (props.kind === 'amxx' ? 920 : 840));
 
 const rowKey = (row: TableRow) => row.key;
 const rowClassName = (row: TableRow) => (isHeader(row) ? 'gsa-group-row' : '');
@@ -301,6 +301,72 @@ function statusMeta(row: PluginRow): { cls: string; text: string } {
     };
     const meta = map[row.status];
     return { cls: meta.cls, text: trans(meta.key) };
+}
+
+/** Builds an inline lucide-style svg (stroke-based, 24×24 grid). */
+function lucideSvg(children: ReturnType<typeof h>[], extraClass = ''): ReturnType<typeof h> {
+    return h(
+        'svg',
+        {
+            xmlns: 'http://www.w3.org/2000/svg',
+            viewBox: '0 0 24 24',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': '2',
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+            'aria-hidden': 'true',
+            class: extraClass ? `w-3.5 h-3.5 ${extraClass}` : 'w-3.5 h-3.5',
+        },
+        children,
+    );
+}
+
+function renderStatusIcon(status: RowStatus): ReturnType<typeof h> {
+    const heartPulse = (animated: boolean): ReturnType<typeof h> =>
+        lucideSvg(
+            [
+                h('path', {
+                    d: 'M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5',
+                }),
+                h('path', { d: 'M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27' }),
+            ],
+            animated ? 'gsa-heartbeat' : '',
+        );
+    switch (status) {
+        case 'running':
+            return heartPulse(true);
+        case 'enabled':
+            return heartPulse(false);
+        case 'paused':
+            return lucideSvg([
+                h('rect', { x: '14', y: '3', width: '5', height: '18', rx: '1' }),
+                h('rect', { x: '5', y: '3', width: '5', height: '18', rx: '1' }),
+            ]);
+        case 'pending':
+            return lucideSvg([
+                h('circle', { cx: '12', cy: '12', r: '10' }),
+                h('polyline', { points: '12 6 12 12 16 14' }),
+            ]);
+        case 'stopped':
+            return lucideSvg([h('rect', { x: '3', y: '3', width: '18', height: '18', rx: '2' })]);
+        case 'error':
+            return lucideSvg([
+                h('path', { d: 'm12.5 17-.5-1-.5 1h1z' }),
+                h('path', {
+                    d: 'M15 22a1 1 0 0 0 1-1v-1a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20v1a1 1 0 0 0 1 1z',
+                }),
+                h('circle', { cx: '15', cy: '12', r: '1' }),
+                h('circle', { cx: '9', cy: '12', r: '1' }),
+            ]);
+        case 'missing':
+            return lucideSvg([
+                h('path', { d: 'M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4' }),
+                h('path', { d: 'M14 2v4a2 2 0 0 0 2 2h4' }),
+                h('path', { d: 'm8 12.5-5 5' }),
+                h('path', { d: 'm3 12.5 5 5' }),
+            ]);
+    }
 }
 
 function systemBadge(): ReturnType<typeof h> {
@@ -399,7 +465,8 @@ function renderActionButton(
     return h(
         'button',
         {
-            class: `inline-flex items-center justify-center align-middle text-center select-none whitespace-nowrap rounded text-xs py-1.5 px-1.5 w-10 lg:w-24 ${buttonClasses(color)}`,
+            class: `inline-flex items-center justify-center align-middle text-center select-none whitespace-nowrap rounded text-xs py-1.5 px-2 ${buttonClasses(color)}`,
+            style: 'width: 6.5rem; flex: none;',
             disabled: props.busy,
             onClick,
         },
@@ -446,12 +513,22 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
                 if (isHeader(row)) {
                     return null;
                 }
-                const icon = h(
+                const meta = statusMeta(row);
+                const circle = h(
                     'span',
                     {
-                        class: 'badge-stone !me-0 inline-flex items-center justify-center w-7 h-7 rounded-full flex-shrink-0',
+                        class: `${meta.cls} !me-0 inline-flex items-center justify-center w-7 h-7 rounded-full flex-shrink-0`,
                     },
-                    h('i', { class: 'fa-regular fa-file-code' }),
+                    renderStatusIcon(row.status),
+                );
+                const icon = h(
+                    NTooltip,
+                    { trigger: 'hover' },
+                    {
+                        trigger: () => circle,
+                        default: () =>
+                            row.statusDetail ? `${meta.text} — ${row.statusDetail}` : meta.text,
+                    },
                 );
                 const name = h(
                     'span',
@@ -498,58 +575,7 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
                 return h('div', { class: 'flex flex-col leading-tight' }, lines);
             },
         },
-        {
-            title: trans('col_status'),
-            key: 'status',
-            width: 120,
-            render(row: TableRow) {
-                if (isHeader(row)) {
-                    return null;
-                }
-                const meta = statusMeta(row);
-                const badge = h(
-                    'span',
-                    {
-                        class: `${meta.cls} whitespace-nowrap inline-flex items-center justify-center min-w-[5.5rem]`,
-                    },
-                    meta.text,
-                );
-                if (row.statusDetail) {
-                    return h(
-                        NTooltip,
-                        { trigger: 'hover' },
-                        { trigger: () => badge, default: () => row.statusDetail },
-                    );
-                }
-                return badge;
-            },
-        },
     ];
-
-    if (props.kind === 'amxx') {
-        cols.push({
-            title: trans('col_debug'),
-            key: 'debug',
-            width: 60,
-            align: 'center',
-            render(row: TableRow) {
-                if (isHeader(row)) {
-                    return null;
-                }
-                const control = h(NSwitch, {
-                    size: 'small',
-                    value: row.debug,
-                    disabled: row.system || props.busy,
-                    'onUpdate:value': (value: boolean) => emit('set-debug', props.kind, row, value),
-                });
-                return h(
-                    NTooltip,
-                    { trigger: 'hover' },
-                    { trigger: () => h('span', {}, control), default: () => trans('debug_hint') },
-                );
-            },
-        });
-    }
 
     cols.push(
         {
@@ -577,16 +603,47 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
                 return control;
             },
         },
-        {
-            title: trans('col_actions'),
-            key: 'actions',
-            align: 'right',
-            width: 420,
+    );
+
+    if (props.kind === 'amxx') {
+        cols.push({
+            title: trans('col_debug'),
+            key: 'debug',
+            width: 80,
+            align: 'center',
             render(row: TableRow) {
                 if (isHeader(row)) {
                     return null;
                 }
-                const spacer = () => h('span', { class: 'inline-block w-10 lg:w-24' });
+                const control = h(NSwitch, {
+                    size: 'small',
+                    value: row.debug,
+                    disabled: row.system || props.busy,
+                    'onUpdate:value': (value: boolean) => emit('set-debug', props.kind, row, value),
+                });
+                return h(
+                    NTooltip,
+                    { trigger: 'hover' },
+                    {
+                        trigger: () => h('span', { class: 'gsa-debug-switch' }, control),
+                        default: () => trans('debug_hint'),
+                    },
+                );
+            },
+        });
+    }
+
+    cols.push(
+        {
+            title: trans('col_actions'),
+            key: 'actions',
+            align: 'right',
+            width: 460,
+            render(row: TableRow) {
+                if (isHeader(row)) {
+                    return null;
+                }
+                const spacer = () => h('span', { style: 'width: 6.5rem; flex: none;' });
                 const buttons = [];
                 const pauseAction =
                     props.kind === 'amxx' && !row.system
@@ -635,7 +692,8 @@ const columns = computed<DataTableColumns<TableRow>>(() => {
                                     h(
                                         'span',
                                         {
-                                            class: 'inline-flex items-center justify-center w-10 lg:w-24 h-7 text-stone-400 dark:text-stone-500',
+                                            class: 'inline-flex items-center justify-center h-7 text-stone-400 dark:text-stone-500',
+                                            style: 'width: 6.5rem; flex: none;',
                                         },
                                         h('i', { class: 'fa-solid fa-lock' }),
                                     ),
@@ -671,5 +729,40 @@ function bulk(action: 'enable' | 'disable' | 'delete'): void {
 <style scoped>
 :deep(.gsa-group-row > td) {
     background-color: rgba(120, 113, 108, 0.06);
+}
+
+/* Debug switch: amber rail when on, so it is not confused with the green "On" switch. */
+:deep(.gsa-debug-switch .n-switch.n-switch--active .n-switch__rail) {
+    background-color: #f59e0b;
+}
+
+@keyframes gsa-heartbeat {
+    0%,
+    100% {
+        transform: scale(1);
+    }
+    14% {
+        transform: scale(1.25);
+    }
+    28% {
+        transform: scale(1);
+    }
+    42% {
+        transform: scale(1.25);
+    }
+    70% {
+        transform: scale(1);
+    }
+}
+
+:deep(.gsa-heartbeat) {
+    animation: gsa-heartbeat 2.6s ease-in-out infinite;
+    transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :deep(.gsa-heartbeat) {
+        animation: none;
+    }
 }
 </style>

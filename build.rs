@@ -9,7 +9,11 @@ fn main() {
 
     stage("frontend/dist/plugin.js", &out.join("plugin.js"));
 
-    let css = ["frontend/dist/plugin.css", "frontend/dist/style.css"]
+    let css = [
+        "frontend/dist/plugin.css",
+        "frontend/dist/goldsrc-addons-plugin.css",
+        "frontend/dist/style.css",
+    ]
         .iter()
         .find(|p| fs::metadata(p).is_ok())
         .copied();

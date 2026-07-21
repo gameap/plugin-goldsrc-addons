@@ -81,6 +81,7 @@ export default defineConfig({
             entry: resolve(process.cwd(), 'src/index.ts'),
             formats: ['es'],
             fileName: () => 'plugin.js',
+            cssFileName: 'plugin',
         },
         outDir: 'dist',
         emptyOutDir: true,
