@@ -142,7 +142,7 @@ import SourceModal from './SourceModal.vue';
 import { RconError, amxxSetPaused, rcon } from '../api/gameap';
 import { apiErrorMessage, deletePlugin, getState, setAttributes, togglePlugin } from '../api/plugin';
 import {
-    matchesListedFile,
+    matchRuntimeToFiles,
     parseAmxxPlugins,
     parseAmxxVersion,
     parseMetaList,
@@ -250,9 +250,8 @@ function buildRow(
     hasConfig: boolean,
     configPath: string | null,
     fallbackName: string,
-    runtimeList: RuntimePluginInfo[],
+    runtime: RuntimePluginInfo | null,
 ): Omit<PluginRow, 'debug' | 'comment' | 'groupIndex' | 'groupTitle' | 'hasSource' | 'sourcePath'> {
-    const runtime = runtimeList.find((item) => matchesListedFile(item.file, file)) ?? null;
     const { status, detail } = computeRowStatus({
         enabled,
         missing,
@@ -282,7 +281,12 @@ const amxxRows = computed<PluginRow[]>(() => {
     if (!state.value) {
         return [];
     }
-    return state.value.amxx.plugins.map((entry) => ({
+    const entries = state.value.amxx.plugins;
+    const runtimes = matchRuntimeToFiles(
+        entries.map((entry) => entry.file),
+        amxxRuntime.value,
+    );
+    return entries.map((entry, index) => ({
         ...buildRow(
             'amxx',
             entry.file,
@@ -293,7 +297,7 @@ const amxxRows = computed<PluginRow[]>(() => {
             entry.has_config,
             entry.config_path,
             prettyName(entry.file),
-            amxxRuntime.value,
+            runtimes[index],
         ),
         debug: entry.debug,
         comment: entry.comment,
@@ -310,7 +314,12 @@ const metamodRows = computed<PluginRow[]>(() => {
     if (!state.value) {
         return [];
     }
-    return state.value.metamod.plugins.map((entry) => ({
+    const entries = state.value.metamod.plugins;
+    const runtimes = matchRuntimeToFiles(
+        entries.map((entry) => entry.file),
+        metaRuntime.value,
+    );
+    return entries.map((entry, index) => ({
         ...buildRow(
             'metamod',
             entry.file,
@@ -321,7 +330,7 @@ const metamodRows = computed<PluginRow[]>(() => {
             false,
             null,
             entry.description ?? prettyName(entry.file),
-            metaRuntime.value,
+            runtimes[index],
         ),
         debug: false,
         comment: entry.description,
@@ -406,8 +415,9 @@ async function onPause(kind: PlatformKind, row: PluginRow, paused: boolean): Pro
         const output = await amxxSetPaused(props.serverId, row.file, paused);
         amxxRuntime.value = parseAmxxPlugins(await rcon(props.serverId, 'amxx plugins'));
         rconAvailability.value = 'ok';
-        const runtime =
-            amxxRuntime.value.find((item) => matchesListedFile(item.file, row.file)) ?? null;
+        // Rows are matched in load order — a sibling with the same truncated
+        // file name must not shadow this plugin's own runtime entry.
+        const runtime = amxxRows.value.find((item) => item.file === row.file)?.runtime ?? null;
         const expected = paused ? 'paused' : 'running';
         if (runtime?.status === expected) {
             toast('success', trans(paused ? 'paused_ok' : 'unpaused_ok', { name: row.name }));

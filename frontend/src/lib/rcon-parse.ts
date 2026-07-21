@@ -63,33 +63,111 @@ export function parseMetaList(output: string): RuntimePluginInfo[] {
 }
 
 /**
- * `amxx plugins` table:
- *          name                    version  author            file             status
- *   [  1] Admin Base              1.9.0.52 AMXX Dev Team     admin.amxx       running
- *   [ 11] CSDM Main               2.1.3d   BAILOPAN          csdm_main.amxx   bad load
+ * `amxx plugins` tables are fixed-width: printf truncates every field to its
+ * column width, so splitting on whitespace mangles values that contain spaces
+ * (a `2.3 Dev` version is a single column). Column offsets are derived from
+ * the table header when it is present; without a header, hardcoded layouts
+ * from the AMXX sources are used (amxmodx/srvcmd.cpp, `amx_command`):
  *
- * AMXX 1.10 adds an id column after the bracketed number and a url column
- * between author and file:
- *   [  4] 3   FreshBans           1.4.8b   kanagava  unknown  fresh_bans.  running
+ *   1.9 branch:  " [%3d] %-23.22s %-11.10s %-17.16s %-16.15s %-9.8s\n"
+ *     → name=7  version=31 author=43 file=61 status=78
+ *   1.10 branch adds id and url columns:
+ *                " [%3d] %-3i %-23.22s %-11.10s %-17.16s %-32.31s %-12.11s %-9.8s\n"
+ *     → id=7 name=11 version=35 author=47 url=65 file=98 status=111
  *
- * Anchored on the known trailing status; name/author may contain spaces.
+ * Statuses come from CPlugin::getStatus() (amxmodx/CPlugin.cpp): running,
+ * debug, paused, bad load, stopped, error ("locked" is ps_locked, UNUSED).
  */
-const AMXX_PLUGINS_LINE =
-    /^\s*\[\s*\d+\]\s+(?:\d+\s+)?(?<name>.+?)\s+(?<version>v?\d\S*)\s+(?<author>.+?)\s+(?<file>\S+)\s+(?<status>running|debug|stopped|paused|bad load|error)\s*$/;
+interface AmxxPluginsLayout {
+    name: number;
+    version: number;
+    author: number;
+    /** AMXX 1.10 only: the author column ends where the url column starts. */
+    url: number | null;
+    file: number;
+    status: number;
+}
 
-export function parseAmxxPlugins(output: string): RuntimePluginInfo[] {
-    const result: RuntimePluginInfo[] = [];
-    for (const line of output.split('\n')) {
-        const match = AMXX_PLUGINS_LINE.exec(line.trimEnd());
-        if (!match?.groups) {
+const AMXX_PLUGINS_LAYOUT_19: AmxxPluginsLayout = {
+    name: 7,
+    version: 31,
+    author: 43,
+    url: null,
+    file: 61,
+    status: 78,
+};
+
+const AMXX_PLUGINS_LAYOUT_110: AmxxPluginsLayout = {
+    name: 11,
+    version: 35,
+    author: 47,
+    url: 65,
+    file: 98,
+    status: 111,
+};
+
+const AMXX_PLUGINS_ROW = /^\s*\[\s*\d+\]/;
+const AMXX_PLUGINS_ROW_WITH_ID = /^\s*\[\s*\d+\]\s+\d+\s/;
+const AMXX_PLUGINS_HEADER = /^\s*(?:id\s+)?name\s+version\s+author\s+(?:url\s+)?file\s+status\s*$/;
+const AMXX_PLUGIN_STATUSES = new Set(['running', 'debug', 'paused', 'stopped', 'bad load', 'error']);
+
+function headerColumnOffset(line: string, word: string): number {
+    const match = new RegExp(`\\b${word}\\b`).exec(line);
+    return match ? match.index : -1;
+}
+
+/**
+ * Locates the table header and derives column offsets from it, so the parser
+ * follows the exact column widths of whichever AMXX build produced the
+ * output. Returns null when there is no usable header line.
+ */
+function amxxPluginsHeaderLayout(lines: string[]): AmxxPluginsLayout | null {
+    for (const line of lines) {
+        if (!AMXX_PLUGINS_HEADER.test(line)) {
             continue;
         }
-        const { name, version, author, file, status } = match.groups;
+        const [name, version, author, url, file, status] = [
+            'name',
+            'version',
+            'author',
+            'url',
+            'file',
+            'status',
+        ].map((word) => headerColumnOffset(line, word));
+        const chain = url >= 0 ? [name, version, author, url, file, status] : [name, version, author, file, status];
+        if (chain.some((offset) => offset < 0) || !chain.every((offset, i) => i === 0 || chain[i - 1] < offset)) {
+            continue;
+        }
+        return { name, version, author, url: url >= 0 ? url : null, file, status };
+    }
+    return null;
+}
+
+export function parseAmxxPlugins(output: string): RuntimePluginInfo[] {
+    const lines = output.split('\n');
+    const headerLayout = amxxPluginsHeaderLayout(lines);
+    const result: RuntimePluginInfo[] = [];
+
+    for (const rawLine of lines) {
+        if (!AMXX_PLUGINS_ROW.test(rawLine)) {
+            continue;
+        }
+        // Rows occasionally lose their leading space when the console stream
+        // is captured; column offsets assume the canonical " [ N] ..." shape.
+        const line = ` ${rawLine.trimStart()}`.trimEnd();
+        const layout =
+            headerLayout ??
+            (AMXX_PLUGINS_ROW_WITH_ID.test(line) ? AMXX_PLUGINS_LAYOUT_110 : AMXX_PLUGINS_LAYOUT_19);
+
+        const status = line.slice(layout.status).trim();
+        if (!AMXX_PLUGIN_STATUSES.has(status)) {
+            continue; // truncated or merged row
+        }
         result.push({
-            file,
-            name: name.trim(),
-            version: normalizeVersion(version),
-            author: splitAuthorFromUrl(author),
+            file: line.slice(layout.file, layout.status).trim(),
+            name: line.slice(layout.name, layout.version).trim(),
+            version: normalizeVersion(line.slice(layout.version, layout.author).trim()),
+            author: line.slice(layout.author, layout.url ?? layout.file).trim() || null,
             status: normalizeAmxxStatus(status),
             rawStatus: status,
         });
@@ -110,6 +188,35 @@ export function matchesListedFile(listed: string, actual: string): boolean {
 }
 
 /**
+ * Pairs plugins.ini file names with runtime entries from console output.
+ * plugins.ini defines the load order, so `amxx plugins` / `meta list` print
+ * plugins in the same sequence; consuming each runtime entry at most once
+ * keeps duplicate truncated names (the file column is width-limited, e.g.
+ * `chatmanager` listed three times) aligned with their own ini rows instead
+ * of every row matching the first runtime entry.
+ *
+ * When a duplicate group has fewer runtime entries than ini files (a sibling
+ * is not loaded), the truncated names are indistinguishable — later ini files
+ * simply get null, which is no worse than a wrong first-match.
+ */
+export function matchRuntimeToFiles(
+    files: string[],
+    runtimeList: RuntimePluginInfo[],
+): (RuntimePluginInfo | null)[] {
+    const claimed = new Set<number>();
+    return files.map((file) => {
+        const index = runtimeList.findIndex(
+            (item, i) => !claimed.has(i) && matchesListedFile(item.file, file),
+        );
+        if (index < 0) {
+            return null;
+        }
+        claimed.add(index);
+        return runtimeList[index];
+    });
+}
+
+/**
  * `status` output:
  *   map     : de_dust2 at: 0 x, 0 y, 0 z
  */
@@ -126,22 +233,6 @@ export function isBadPasswordOutput(output: string): boolean {
 function normalizeVersion(raw: string): string | null {
     const cleaned = raw.replace(/^v/i, '').trim();
     return /^[0-9]/.test(cleaned) ? cleaned : null;
-}
-
-/**
- * The author capture spans everything between version and file, which in the
- * AMXX 1.10 layout includes the url column. Split it on runs of 2+ spaces and
- * drop the trailing chunk when it looks like a url, keeping the rest as the
- * author (a version suffix spilling into the author, e.g. `2.3 Dev`, is
- * preserved). A lone chunk is always kept — the classic layout has no url.
- */
-function splitAuthorFromUrl(middle: string): string {
-    const chunks = middle.trim().split(/\s{2,}/);
-    const last = chunks[chunks.length - 1].toLowerCase();
-    if (chunks.length > 1 && (last === 'unknown' || last.startsWith('http'))) {
-        chunks.pop();
-    }
-    return chunks.join(' ');
 }
 
 function normalizeMetaStatus(stat: string): RuntimePluginInfo['status'] {
