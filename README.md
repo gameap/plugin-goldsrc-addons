@@ -12,7 +12,7 @@ and config editing.
 - **Frontend** — Vue 3 + naive-ui, embedded into the WASM module. It uses the
   existing panel endpoints: RCON (`meta version`, `amxx version`, `meta list`,
   `amxx plugins` — versions and runtime statuses), the file manager (uploading
-  plugin files, configs) and server restart.
+  plugin files, configs).
 
 ## Features
 
@@ -39,7 +39,6 @@ and config editing.
   plugin overwrites the file with the new version (`force`); the `plugins.ini`
   line stays in place.
 - Editing a plugin config (`configs/<name>.cfg|.ini`) in a modal.
-- "Restart required" banner with a server restart button.
 
 Installing / updating / removing Metamod and AMX Mod X themselves is out of the
 plugin's scope.

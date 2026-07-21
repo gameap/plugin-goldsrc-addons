@@ -42,14 +42,6 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
             rcon_unavailable_empty:
                 'The server console returned an empty response — versions and statuses are unavailable.',
 
-            restart_required_title: 'Server restart required',
-            restart_required_text:
-                'Plugin list changes take effect after a server restart or map change.',
-            restart_now: 'Restart now',
-            restarting: 'Restarting…',
-            restart_done: 'Server is restarting',
-            restart_failed: 'Failed to restart the server',
-
             upload_file: 'Upload file',
             search_placeholder: 'Search by name, file, author…',
             filter_all: 'All statuses',
@@ -195,14 +187,6 @@ export const goldsrcAddonsPlugin: PluginDefinition = {
                 'Неверный RCON-пароль — версии и статусы из консоли недоступны. Проверьте пароль в настройках сервера.',
             rcon_unavailable_empty:
                 'Консоль сервера вернула пустой ответ — версии и статусы недоступны.',
-
-            restart_required_title: 'Требуется перезапуск сервера',
-            restart_required_text:
-                'Изменения в списке плагинов вступят в силу после перезапуска сервера или смены карты.',
-            restart_now: 'Перезапустить сейчас',
-            restarting: 'Перезапуск…',
-            restart_done: 'Сервер перезапускается',
-            restart_failed: 'Не удалось перезапустить сервер',
 
             upload_file: 'Загрузить файл',
             search_placeholder: 'Поиск по названию, файлу, автору…',

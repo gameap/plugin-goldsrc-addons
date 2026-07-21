@@ -1,6 +1,5 @@
 // Existing GameAP panel endpoints the plugin frontend uses directly:
-// RCON for versions/runtime status, file-manager for uploads and configs,
-// server restart.
+// RCON for versions/runtime status, file-manager for uploads and configs.
 
 import axios from 'axios';
 
@@ -108,9 +107,4 @@ export async function fmEnsureDirectory(
         }
         throw error;
     }
-}
-
-/** POST /api/servers/{id}/restart */
-export async function restartServer(serverId: number): Promise<void> {
-    await axios.post(`/api/servers/${serverId}/restart`);
 }
